@@ -225,15 +225,7 @@ class PanelManageView(discord.ui.View):
     async def create_panel(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         async def on_submit(inter: discord.Interaction, **kwargs) -> None:
             view = PanelSetupView(self.guild_id, **kwargs)
-            embed = discord.Embed(
-                title="⚙️ Настройка панели",
-                description=(
-                    f"**Название:** {kwargs['name']}\n"
-                    "Выберите канал и форму для панели:"
-                ),
-                color=config.COLOR_PRIMARY,
-            )
-            await inter.response.send_message(embed=embed, view=view, ephemeral=True)
+            await inter.response.send_message(embed=view._make_status_embed(), view=view, ephemeral=True)
 
         modal = PanelCreateModal(on_submit)
         await interaction.response.send_modal(modal)
@@ -300,9 +292,13 @@ class PanelSetupView(discord.ui.View):
         self.color = color
         self.selected_channel_id: int | None = None
         self.selected_form_id: int | None = None
+        self.selected_form_name: str | None = None
         self.selected_category_id: int | None = None
         self.selected_ping_role_ids: list = []
         self.selected_viewer_role_ids: list = []
+        self._form_select: discord.ui.Select | None = None
+        self._form_btn: discord.ui.Button | None = None
+        self._publish_btn: discord.ui.Button | None = None
 
         ch_select = discord.ui.ChannelSelect(
             placeholder="1️⃣ Канал для панели (обязательно)...",
@@ -342,70 +338,80 @@ class PanelSetupView(discord.ui.View):
         )
         ping_select.callback = self._select_ping_roles
         self.add_item(ping_select)
-        self._role_select = ping_select
+        self._ping_select = ping_select
+
+        self._add_action_row()
+
+    def _make_status_embed(self) -> discord.Embed:
+        ch = f"<#{self.selected_channel_id}>" if self.selected_channel_id else "❌ **не выбран** (обязательно)"
+        cat = f"<#{self.selected_category_id}>" if self.selected_category_id else "—"
+        viewers = ", ".join(f"<@&{r}>" for r in self.selected_viewer_role_ids) if self.selected_viewer_role_ids else "—"
+        pings = ", ".join(f"<@&{r}>" for r in self.selected_ping_role_ids) if self.selected_ping_role_ids else "—"
+        form = f"📋 {self.selected_form_name}" if self.selected_form_name else "⚠️ не выбрана — нажмите кнопку ниже"
+        return discord.Embed(
+            title="⚙️ Настройка панели",
+            description=(
+                f"**Название:** {self.name}\n"
+                f"**Канал панели:** {ch}\n"
+                f"**Категория тикетов:** {cat}\n"
+                f"**Роли видимости:** {viewers}\n"
+                f"**Роли пинга:** {pings}\n"
+                f"**Форма:** {form}"
+            ),
+            color=config.COLOR_PRIMARY,
+        )
+
+    def _add_action_row(self) -> None:
+        form_label = f"📋 {self.selected_form_name[:38]}" if self.selected_form_name else "📋 Выбрать форму"
+        form_btn = discord.ui.Button(
+            label=form_label,
+            style=discord.ButtonStyle.primary if self.selected_form_name else discord.ButtonStyle.secondary,
+            row=4,
+        )
+        form_btn.callback = self._pick_form_callback
+        self.add_item(form_btn)
+        self._form_btn = form_btn
+
+        publish_btn = discord.ui.Button(
+            label="🚀 Опубликовать",
+            style=discord.ButtonStyle.success,
+            row=4,
+        )
+        publish_btn.callback = self._publish_callback
+        self.add_item(publish_btn)
+        self._publish_btn = publish_btn
 
     async def _select_channel(self, interaction: discord.Interaction) -> None:
         self.selected_channel_id = self._ch_select.values[0].id
-        await respond_and_delete(
-            interaction,
-            EmbedBuilder.success("Канал выбран", f"Канал панели: <#{self.selected_channel_id}>"),
-        )
+        await interaction.response.edit_message(embed=self._make_status_embed(), view=self)
 
     async def _select_category(self, interaction: discord.Interaction) -> None:
-        if self._cat_select.values:
-            self.selected_category_id = self._cat_select.values[0].id
-            await respond_and_delete(
-                interaction,
-                EmbedBuilder.success("Категория выбрана", f"Тикеты будут создаваться в <#{self.selected_category_id}>."),
-            )
-        else:
-            self.selected_category_id = None
-            await respond_and_delete(
-                interaction,
-                EmbedBuilder.info("Категория не выбрана", "Тикеты будут создаваться без категории."),
-            )
+        self.selected_category_id = self._cat_select.values[0].id if self._cat_select.values else None
+        await interaction.response.edit_message(embed=self._make_status_embed(), view=self)
 
     async def _select_viewer_roles(self, interaction: discord.Interaction) -> None:
         self.selected_viewer_role_ids = [r.id for r in self._viewer_select.values]
-        if self.selected_viewer_role_ids:
-            mentions = " ".join(f"<@&{rid}>" for rid in self.selected_viewer_role_ids)
-            await respond_and_delete(
-                interaction,
-                EmbedBuilder.success("Роли видимости выбраны", f"Эти роли будут видеть тикеты: {mentions}"),
-            )
-        else:
-            await respond_and_delete(
-                interaction,
-                EmbedBuilder.info("Роли видимости сброшены", "Тикеты будут видны только автору и персоналу."),
-            )
+        await interaction.response.edit_message(embed=self._make_status_embed(), view=self)
 
     async def _select_ping_roles(self, interaction: discord.Interaction) -> None:
-        self.selected_ping_role_ids = [r.id for r in self._role_select.values]
-        if self.selected_ping_role_ids:
-            mentions = " ".join(f"<@&{rid}>" for rid in self.selected_ping_role_ids)
-            await respond_and_delete(
-                interaction,
-                EmbedBuilder.success("Роли пинга выбраны", f"При создании тикета будут упомянуты: {mentions}"),
-            )
-        else:
-            await respond_and_delete(
-                interaction,
-                EmbedBuilder.info("Роли пинга сброшены", "При создании тикета пинг ролей не будет."),
-            )
+        self.selected_ping_role_ids = [r.id for r in self._ping_select.values]
+        await interaction.response.edit_message(embed=self._make_status_embed(), view=self)
 
-    @discord.ui.button(label="Выбрать форму", style=discord.ButtonStyle.secondary, emoji="📋", row=4)
-    async def pick_form(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+    async def _pick_form_callback(self, interaction: discord.Interaction) -> None:
         async with async_session_maker() as session:
             forms = await FormService.get_all(session, self.guild_id)
 
         if not forms:
             await interaction.response.send_message(
-                embed=EmbedBuilder.info("Нет форм", "Формы не созданы. Создайте форму в разделе «Формы»."),
+                embed=EmbedBuilder.info(
+                    "Нет форм",
+                    "Сначала создайте форму через кнопку **«Формы»** в главном меню администратора.",
+                ),
                 ephemeral=True,
             )
             return
 
-        options = [discord.SelectOption(label="Без формы", value="0", description="Создать тикет без заполнения формы")]
+        options = [discord.SelectOption(label="Без формы", value="0", description="Тикет создаётся без вопросов")]
         options += [
             discord.SelectOption(
                 label=f.name[:100],
@@ -415,15 +421,40 @@ class PanelSetupView(discord.ui.View):
             for f in forms[:24]
         ]
 
-        view = FormPickView(self, options)
-        await interaction.response.send_message(
-            embed=EmbedBuilder.info("Выберите форму", ""),
-            view=view,
-            ephemeral=True,
-        )
+        self.remove_item(self._form_btn)
+        self.remove_item(self._publish_btn)
 
-    @discord.ui.button(label="Опубликовать панель", style=discord.ButtonStyle.success, emoji="🚀", row=4)
-    async def publish_panel(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        form_select = discord.ui.Select(
+            placeholder="📋 Выберите форму из списка...",
+            options=options,
+            row=4,
+        )
+        form_select.callback = self._form_selected_callback
+        self.add_item(form_select)
+        self._form_select = form_select
+
+        await interaction.response.edit_message(embed=self._make_status_embed(), view=self)
+
+    async def _form_selected_callback(self, interaction: discord.Interaction) -> None:
+        val = int(interaction.data["values"][0])
+        if val == 0:
+            self.selected_form_id = None
+            self.selected_form_name = None
+        else:
+            self.selected_form_id = val
+            self.selected_form_name = next(
+                (opt.label for opt in (self._form_select.options if self._form_select else []) if opt.value == str(val)),
+                f"Форма #{val}",
+            )
+
+        if self._form_select:
+            self.remove_item(self._form_select)
+            self._form_select = None
+
+        self._add_action_row()
+        await interaction.response.edit_message(embed=self._make_status_embed(), view=self)
+
+    async def _publish_callback(self, interaction: discord.Interaction) -> None:
         if not self.selected_channel_id:
             await interaction.response.send_message(
                 embed=EmbedBuilder.error("Ошибка", "Сначала выберите канал для панели (пункт 1️⃣)."),
@@ -490,22 +521,6 @@ class PanelSetupView(discord.ui.View):
         )
 
 
-class FormPickView(discord.ui.View):
-    def __init__(self, parent: PanelSetupView, options: list) -> None:
-        super().__init__(timeout=60)
-        self.parent = parent
-
-        select = discord.ui.Select(placeholder="Выберите форму...", options=options)
-        select.callback = self._callback
-        self.add_item(select)
-
-    async def _callback(self, interaction: discord.Interaction) -> None:
-        val = int(interaction.data["values"][0])
-        self.parent.selected_form_id = val if val != 0 else None
-        label = "без формы" if val == 0 else f"форма ID={val}"
-        await respond_and_delete(interaction, EmbedBuilder.success("Форма выбрана", f"Выбрана: {label}"))
-
-
 class PanelSelectEditView(discord.ui.View):
     def __init__(self, guild_id: int, options: list) -> None:
         super().__init__(timeout=60)
@@ -530,6 +545,7 @@ class PanelSelectEditView(discord.ui.View):
             current_ping_role_ids = panel.ping_role_ids or []
             current_viewer_role_ids = panel.viewer_role_ids or []
             current_form_id = panel.form_id
+            current_form_name = panel.form.name if panel.form else None
 
         async def on_submit(inter: discord.Interaction, **kwargs) -> None:
             async with async_session_maker() as session:
@@ -555,21 +571,10 @@ class PanelSelectEditView(discord.ui.View):
                 current_ping_role_ids=current_ping_role_ids,
                 current_viewer_role_ids=current_viewer_role_ids,
                 current_form_id=current_form_id,
+                current_form_name=current_form_name,
             )
-            viewer_info = f"Ролей видимости: {len(current_viewer_role_ids)}" if current_viewer_role_ids else "Роли видимости: не заданы"
-            ping_info = f"Ролей пинга: {len(current_ping_role_ids)}" if current_ping_role_ids else "Пинг ролей: не задан"
             await inter.response.send_message(
-                embed=discord.Embed(
-                    title="⚙️ Дополнительные настройки панели",
-                    description=(
-                        "Текстовые поля обновлены.\n\n"
-                        "Если ничего не выбирать — текущие настройки сохранятся.\n\n"
-                        f"Канал: <#{current_channel_id}>\n"
-                        + (f"Категория: <#{current_category_id}>\n" if current_category_id else "")
-                        + f"{viewer_info}\n{ping_info}"
-                    ),
-                    color=config.COLOR_PRIMARY,
-                ),
+                embed=ext_view._make_status_embed(),
                 view=ext_view,
                 ephemeral=True,
             )
@@ -883,7 +888,7 @@ class LogChannelPickerView(discord.ui.View):
 
 
 class PanelExtendedEditView(discord.ui.View):
-    """Second step of panel editing: channel, category, ping roles, form."""
+    """Second step of panel editing: channel, category, ping roles, viewer roles, form."""
 
     def __init__(
         self,
@@ -894,18 +899,29 @@ class PanelExtendedEditView(discord.ui.View):
         current_ping_role_ids: list,
         current_viewer_role_ids: list,
         current_form_id: int | None,
+        current_form_name: str | None = None,
     ) -> None:
         super().__init__(timeout=300)
         self.guild_id = guild_id
         self.panel_id = panel_id
+        self.current_channel_id = current_channel_id
+        self.current_category_id = current_category_id
+        self.current_ping_role_ids = current_ping_role_ids
+        self.current_viewer_role_ids = current_viewer_role_ids
+        self.current_form_name = current_form_name
         self.new_channel_id: int | None = None
         self.new_category_id: int | None = None
         self.new_ping_role_ids: list | None = None
         self.new_viewer_role_ids: list | None = None
         self.new_form_id: int | None = None
+        self.new_form_name: str | None = None
+        self._form_changed = False
+        self._form_select: discord.ui.Select | None = None
+        self._form_btn: discord.ui.Button | None = None
+        self._save_btn: discord.ui.Button | None = None
 
         ch_select = discord.ui.ChannelSelect(
-            placeholder="Новый канал панели (оставьте пустым — без изменений)...",
+            placeholder="1️⃣ Новый канал панели (не трогать — без изменений)...",
             channel_types=[discord.ChannelType.text],
             min_values=0,
             max_values=1,
@@ -916,7 +932,7 @@ class PanelExtendedEditView(discord.ui.View):
         self._ch_select = ch_select
 
         cat_select = discord.ui.ChannelSelect(
-            placeholder="Новая категория тикетов (оставьте пустым — без изменений)...",
+            placeholder="2️⃣ Новая категория тикетов (не трогать — без изменений)...",
             channel_types=[discord.ChannelType.category],
             min_values=0,
             max_values=1,
@@ -926,81 +942,122 @@ class PanelExtendedEditView(discord.ui.View):
         self.add_item(cat_select)
         self._cat_select = cat_select
 
-        ping_select = discord.ui.RoleSelect(
-            placeholder="Роли пинга (0 = убрать все, не трогать = без изменений)...",
+        viewer_select = discord.ui.RoleSelect(
+            placeholder="3️⃣ Роли видимости тикетов (не трогать — без изменений)...",
             min_values=0,
             max_values=10,
             row=2,
-        )
-        ping_select.callback = self._select_ping_roles
-        self.add_item(ping_select)
-        self._role_select = ping_select
-
-        viewer_select = discord.ui.RoleSelect(
-            placeholder="Роли видимости тикетов (0 = убрать все, не трогать = без изменений)...",
-            min_values=0,
-            max_values=10,
-            row=3,
         )
         viewer_select.callback = self._select_viewer_roles
         self.add_item(viewer_select)
         self._viewer_select = viewer_select
 
-    async def _select_channel(self, interaction: discord.Interaction) -> None:
-        if self._ch_select.values:
-            self.new_channel_id = self._ch_select.values[0].id
-            await respond_and_delete(
-                interaction,
-                EmbedBuilder.success("Канал выбран", f"Новый канал панели: <#{self.new_channel_id}>"),
-            )
+        ping_select = discord.ui.RoleSelect(
+            placeholder="4️⃣ Роли пинга при создании тикета (не трогать — без изменений)...",
+            min_values=0,
+            max_values=10,
+            row=3,
+        )
+        ping_select.callback = self._select_ping_roles
+        self.add_item(ping_select)
+        self._ping_select = ping_select
+
+        self._add_action_row()
+
+    def _make_status_embed(self) -> discord.Embed:
+        eff_ch = self.new_channel_id or self.current_channel_id
+        ch_str = f"<#{eff_ch}>" + (" ✏️" if self.new_channel_id else "")
+
+        eff_cat = self.new_category_id if self.new_category_id is not None else self.current_category_id
+        cat_str = (f"<#{eff_cat}>" + (" ✏️" if self.new_category_id is not None else "")) if eff_cat else "—"
+
+        if self.new_viewer_role_ids is not None:
+            viewers = (", ".join(f"<@&{r}>" for r in self.new_viewer_role_ids) if self.new_viewer_role_ids else "—") + " ✏️"
+        elif self.current_viewer_role_ids:
+            viewers = ", ".join(f"<@&{r}>" for r in self.current_viewer_role_ids)
         else:
-            self.new_channel_id = None
-            await respond_and_delete(interaction, EmbedBuilder.info("Канал", "Канал не изменён."))
+            viewers = "—"
+
+        if self.new_ping_role_ids is not None:
+            pings = (", ".join(f"<@&{r}>" for r in self.new_ping_role_ids) if self.new_ping_role_ids else "—") + " ✏️"
+        elif self.current_ping_role_ids:
+            pings = ", ".join(f"<@&{r}>" for r in self.current_ping_role_ids)
+        else:
+            pings = "—"
+
+        if self._form_changed:
+            form_str = (f"📋 {self.new_form_name} ✏️" if self.new_form_name else "— (убрана) ✏️")
+        elif self.current_form_name:
+            form_str = f"📋 {self.current_form_name}"
+        else:
+            form_str = "— (нажмите кнопку ниже чтобы привязать)"
+
+        return discord.Embed(
+            title="⚙️ Редактирование панели",
+            description=(
+                "Выберите что нужно изменить. Нетронутые пункты сохранятся как есть.\n"
+                f"✏️ = изменено\n\n"
+                f"**Канал панели:** {ch_str}\n"
+                f"**Категория тикетов:** {cat_str}\n"
+                f"**Роли видимости:** {viewers}\n"
+                f"**Роли пинга:** {pings}\n"
+                f"**Форма:** {form_str}"
+            ),
+            color=config.COLOR_PRIMARY,
+        )
+
+    def _add_action_row(self) -> None:
+        if self._form_changed:
+            form_label = f"📋 {self.new_form_name[:36]}" if self.new_form_name else "📋 Без формы"
+        elif self.current_form_name:
+            form_label = f"📋 {self.current_form_name[:36]}"
+        else:
+            form_label = "📋 Привязать форму"
+
+        form_btn = discord.ui.Button(
+            label=form_label,
+            style=discord.ButtonStyle.primary if (self._form_changed or self.current_form_name) else discord.ButtonStyle.secondary,
+            row=4,
+        )
+        form_btn.callback = self._pick_form_callback
+        self.add_item(form_btn)
+        self._form_btn = form_btn
+
+        save_btn = discord.ui.Button(
+            label="💾 Сохранить изменения",
+            style=discord.ButtonStyle.success,
+            row=4,
+        )
+        save_btn.callback = self._save_callback
+        self.add_item(save_btn)
+        self._save_btn = save_btn
+
+    async def _select_channel(self, interaction: discord.Interaction) -> None:
+        self.new_channel_id = self._ch_select.values[0].id if self._ch_select.values else None
+        await interaction.response.edit_message(embed=self._make_status_embed(), view=self)
 
     async def _select_category(self, interaction: discord.Interaction) -> None:
-        if self._cat_select.values:
-            self.new_category_id = self._cat_select.values[0].id
-            await respond_and_delete(
-                interaction,
-                EmbedBuilder.success("Категория выбрана", f"Тикеты будут создаваться в <#{self.new_category_id}>."),
-            )
-        else:
-            self.new_category_id = None
-            await respond_and_delete(interaction, EmbedBuilder.info("Категория", "Категория не изменена."))
-
-    async def _select_ping_roles(self, interaction: discord.Interaction) -> None:
-        self.new_ping_role_ids = [r.id for r in self._role_select.values]
-        if self.new_ping_role_ids:
-            mentions = " ".join(f"<@&{rid}>" for rid in self.new_ping_role_ids)
-            await respond_and_delete(
-                interaction,
-                EmbedBuilder.success("Роли пинга", f"Будут пинговаться: {mentions}"),
-            )
-        else:
-            await respond_and_delete(interaction, EmbedBuilder.info("Роли пинга сброшены", "Пинг ролей убран."))
+        self.new_category_id = self._cat_select.values[0].id if self._cat_select.values else None
+        await interaction.response.edit_message(embed=self._make_status_embed(), view=self)
 
     async def _select_viewer_roles(self, interaction: discord.Interaction) -> None:
         self.new_viewer_role_ids = [r.id for r in self._viewer_select.values]
-        if self.new_viewer_role_ids:
-            mentions = " ".join(f"<@&{rid}>" for rid in self.new_viewer_role_ids)
-            await respond_and_delete(
-                interaction,
-                EmbedBuilder.success("Роли видимости", f"Тикеты будут видеть: {mentions}"),
-            )
-        else:
-            await respond_and_delete(
-                interaction,
-                EmbedBuilder.info("Роли видимости сброшены", "Тикеты будут видны только автору и персоналу."),
-            )
+        await interaction.response.edit_message(embed=self._make_status_embed(), view=self)
 
-    @discord.ui.button(label="Выбрать форму", style=discord.ButtonStyle.secondary, emoji="📋", row=4)
-    async def pick_form(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+    async def _select_ping_roles(self, interaction: discord.Interaction) -> None:
+        self.new_ping_role_ids = [r.id for r in self._ping_select.values]
+        await interaction.response.edit_message(embed=self._make_status_embed(), view=self)
+
+    async def _pick_form_callback(self, interaction: discord.Interaction) -> None:
         async with async_session_maker() as session:
             forms = await FormService.get_all(session, self.guild_id)
 
         if not forms:
             await interaction.response.send_message(
-                embed=EmbedBuilder.info("Нет форм", "Создайте форму в разделе «Формы»."),
+                embed=EmbedBuilder.info(
+                    "Нет форм",
+                    "Сначала создайте форму через кнопку **«Формы»** в главном меню администратора.",
+                ),
                 ephemeral=True,
             )
             return
@@ -1015,15 +1072,41 @@ class PanelExtendedEditView(discord.ui.View):
             for f in forms[:24]
         ]
 
-        view = FormPickExtView(self, options)
-        await interaction.response.send_message(
-            embed=EmbedBuilder.info("Выберите форму", ""),
-            view=view,
-            ephemeral=True,
-        )
+        self.remove_item(self._form_btn)
+        self.remove_item(self._save_btn)
 
-    @discord.ui.button(label="Сохранить изменения", style=discord.ButtonStyle.success, emoji="💾", row=4)
-    async def save_changes(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        form_select = discord.ui.Select(
+            placeholder="📋 Выберите форму из списка...",
+            options=options,
+            row=4,
+        )
+        form_select.callback = self._form_selected_callback
+        self.add_item(form_select)
+        self._form_select = form_select
+
+        await interaction.response.edit_message(embed=self._make_status_embed(), view=self)
+
+    async def _form_selected_callback(self, interaction: discord.Interaction) -> None:
+        val = int(interaction.data["values"][0])
+        self._form_changed = True
+        if val == 0:
+            self.new_form_id = 0
+            self.new_form_name = None
+        else:
+            self.new_form_id = val
+            self.new_form_name = next(
+                (opt.label for opt in (self._form_select.options if self._form_select else []) if opt.value == str(val)),
+                f"Форма #{val}",
+            )
+
+        if self._form_select:
+            self.remove_item(self._form_select)
+            self._form_select = None
+
+        self._add_action_row()
+        await interaction.response.edit_message(embed=self._make_status_embed(), view=self)
+
+    async def _save_callback(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
 
         async with async_session_maker() as session:
@@ -1042,8 +1125,8 @@ class PanelExtendedEditView(discord.ui.View):
                 p.ping_role_ids = self.new_ping_role_ids or None
             if self.new_viewer_role_ids is not None:
                 p.viewer_role_ids = self.new_viewer_role_ids or None
-            if self.new_form_id is not None:
-                p.form_id = self.new_form_id if self.new_form_id != 0 else None
+            if self._form_changed:
+                p.form_id = self.new_form_id if self.new_form_id else None
 
             await AuditService.log(
                 session,
@@ -1082,24 +1165,6 @@ class PanelExtendedEditView(discord.ui.View):
             embed=EmbedBuilder.success("Настройки сохранены", "Все изменения применены к панели."),
             ephemeral=True,
         )
-
-
-class FormPickExtView(discord.ui.View):
-    """Form picker for the extended panel edit view."""
-
-    def __init__(self, parent: PanelExtendedEditView, options: list) -> None:
-        super().__init__(timeout=60)
-        self.parent = parent
-
-        select = discord.ui.Select(placeholder="Выберите форму...", options=options)
-        select.callback = self._callback
-        self.add_item(select)
-
-    async def _callback(self, interaction: discord.Interaction) -> None:
-        val = int(interaction.data["values"][0])
-        self.parent.new_form_id = val
-        label = "без формы" if val == 0 else f"форма ID={val}"
-        await respond_and_delete(interaction, EmbedBuilder.success("Форма выбрана", f"Выбрана: {label}"))
 
 
 class BackupView(discord.ui.View):
