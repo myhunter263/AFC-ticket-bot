@@ -62,6 +62,9 @@ async def init_db() -> None:
                 await conn.execute(
                     text("ALTER TABLE ticket_panels ADD COLUMN IF NOT EXISTS viewer_role_ids JSONB")
                 )
+                await conn.execute(
+                    text("ALTER TABLE audit_logs ALTER COLUMN target_id TYPE BIGINT")
+                )
             logger.info("Database initialized successfully.")
             return
         except Exception as exc:

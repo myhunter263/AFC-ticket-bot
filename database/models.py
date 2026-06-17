@@ -219,7 +219,7 @@ class AuditLog(Base):
     user_name: Mapped[str] = mapped_column(String(100))
     action: Mapped[str] = mapped_column(String(100))
     target_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    target_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    target_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     details: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
 
