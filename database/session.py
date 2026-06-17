@@ -2,12 +2,19 @@ import asyncio
 import logging
 from typing import AsyncGenerator
 
+from asyncpg.exceptions import InvalidPasswordError, InvalidAuthorizationSpecificationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from config import config
 from database.models import Base
 
 logger = logging.getLogger(__name__)
+
+# Ошибки, при которых ретрай бессмысленен — немедленно падаем с понятным сообщением
+_FATAL_DB_ERRORS = (
+    InvalidPasswordError,
+    InvalidAuthorizationSpecificationError,
+)
 
 engine = create_async_engine(
     config.DATABASE_URL,
@@ -48,6 +55,20 @@ async def init_db() -> None:
             logger.info("Database initialized successfully.")
             return
         except Exception as exc:
+            # Ищем причину в цепочке исключений (SQLAlchemy оборачивает asyncpg-ошибки)
+            cause = exc
+            while cause is not None:
+                if isinstance(cause, _FATAL_DB_ERRORS):
+                    logger.error(
+                        "Database authentication failed — wrong POSTGRES_PASSWORD in .env. "
+                        "Fix the password or remove the volume and restart. Error: %s",
+                        cause,
+                    )
+                    raise SystemExit(1) from exc
+                cause = getattr(cause, "__cause__", None) or getattr(cause, "__context__", None)
+                if cause is exc:
+                    break
+
             logger.warning(
                 "Database not ready (attempt %d/%d): %s. Retrying in %ds...",
                 attempt,
