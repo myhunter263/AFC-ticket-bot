@@ -6,7 +6,9 @@ load_dotenv()
 
 class Config:
     DISCORD_TOKEN: str = os.environ["DISCORD_TOKEN"]
-    DISCORD_GUILD_ID: int | None = int(os.environ["DISCORD_GUILD_ID"]) if os.environ.get("DISCORD_GUILD_ID") else None
+    DISCORD_GUILD_ID: int | None = (
+        int(os.environ["DISCORD_GUILD_ID"]) if os.environ.get("DISCORD_GUILD_ID") else None
+    )
 
     POSTGRES_HOST: str = os.getenv("POSTGRES_HOST", "db")
     POSTGRES_PORT: int = int(os.getenv("POSTGRES_PORT", "5432"))
@@ -14,14 +16,15 @@ class Config:
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", "ticketbot")
     POSTGRES_PASSWORD: str = os.environ["POSTGRES_PASSWORD"]
 
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL",
-        f"postgresql+asyncpg://{os.getenv('POSTGRES_USER', 'ticketbot')}:"
-        f"{os.getenv('POSTGRES_PASSWORD', '')}@"
-        f"{os.getenv('POSTGRES_HOST', 'db')}:"
-        f"{os.getenv('POSTGRES_PORT', '5432')}/"
-        f"{os.getenv('POSTGRES_DB', 'ticketbot')}",
-    )
+    # DATABASE_URL всегда строится из POSTGRES_* переменных.
+    # Никогда не читаем из env напрямую — это исключает ошибку
+    # когда DATABASE_URL в .env содержит старый или неверный пароль.
+    @property
+    def DATABASE_URL(self) -> str:
+        return (
+            f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        )
 
     BOT_PREFIX: str = os.getenv("BOT_PREFIX", "!")
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
