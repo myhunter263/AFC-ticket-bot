@@ -58,7 +58,7 @@ class SetupCog(commands.Cog):
 
     @app_commands.command(name="afc-status", description="[AFC] Информация о боте и статистика")
     @app_commands.guild_only()
-    async def bot_info(self, interaction: discord.Interaction) -> None:
+    async def afc_status(self, interaction: discord.Interaction) -> None:
         async with async_session_maker() as session:
             tickets = await TicketService.list_open(session, interaction.guild_id, limit=1000)
             statuses = await StatusService.get_all(session, interaction.guild_id)
