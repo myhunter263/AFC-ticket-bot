@@ -168,16 +168,16 @@ class TicketsCog(commands.Cog):
             status_name = status.name if status else "Неизвестно"
             status_color = status.color if status else 0x5865F2
             status_emoji = status.emoji or "" if status else ""
-            assignee_id = ticket.assignee_id
+            assignee_ids = [a.user_id for a in ticket.assignees]
 
         guild = interaction.guild
         author = guild.get_member(ticket.author_id)
-        assignee = guild.get_member(assignee_id) if assignee_id else None
+        assignees = [m for uid in assignee_ids if (m := guild.get_member(uid))]
 
         embed = EmbedBuilder.ticket_card(
             ticket=ticket,
             author=author or interaction.user,
-            assignee=assignee,
+            assignees=assignees,
             status_name=status_name,
             status_color=status_color,
             status_emoji=status_emoji,

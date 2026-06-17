@@ -10,11 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from database.models import (
+    FormField,
     Guild,
     LogSettings,
     NotificationSettings,
     Ticket,
+    TicketAssignee,
+    TicketForm,
     TicketPanel,
+    TicketReport,
     TicketResponse,
     TicketStatus,
 )
@@ -111,6 +115,8 @@ class TicketService:
                 selectinload(Ticket.responses),
                 selectinload(Ticket.status),
                 selectinload(Ticket.panel),
+                selectinload(Ticket.assignees),
+                selectinload(Ticket.reports),
             )
         )
         return result.scalar_one_or_none()
@@ -124,9 +130,54 @@ class TicketService:
                 selectinload(Ticket.responses),
                 selectinload(Ticket.status),
                 selectinload(Ticket.panel),
+                selectinload(Ticket.assignees),
+                selectinload(Ticket.reports),
             )
         )
         return result.scalar_one_or_none()
+
+    @staticmethod
+    async def claim(
+        session: AsyncSession, ticket: Ticket, user_id: int, claimed_by: int
+    ) -> tuple[bool, bool]:
+        """Returns (success, was_already_assigned). success=False if ticket is closed."""
+        if ticket.is_closed:
+            return False, False
+        existing = await session.execute(
+            select(TicketAssignee).where(
+                TicketAssignee.ticket_id == ticket.id,
+                TicketAssignee.user_id == user_id,
+            )
+        )
+        if existing.scalar_one_or_none():
+            return True, True
+        session.add(TicketAssignee(ticket_id=ticket.id, user_id=user_id, assigned_by=claimed_by))
+        await session.flush()
+        return True, False
+
+    @staticmethod
+    async def unclaim(session: AsyncSession, ticket: Ticket, user_id: int) -> bool:
+        result = await session.execute(
+            select(TicketAssignee).where(
+                TicketAssignee.ticket_id == ticket.id,
+                TicketAssignee.user_id == user_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row:
+            await session.delete(row)
+            await session.flush()
+            return True
+        return False
+
+    @staticmethod
+    async def add_report(
+        session: AsyncSession, ticket_id: int, author_id: int, content: str
+    ) -> TicketReport:
+        report = TicketReport(ticket_id=ticket_id, author_id=author_id, content=content)
+        session.add(report)
+        await session.flush()
+        return report
 
     @staticmethod
     async def update_status(
@@ -191,7 +242,11 @@ class TicketService:
     @staticmethod
     async def get_panel_by_id(session: AsyncSession, panel_id: int) -> Optional[TicketPanel]:
         result = await session.execute(
-            select(TicketPanel).where(TicketPanel.id == panel_id)
+            select(TicketPanel)
+            .where(TicketPanel.id == panel_id)
+            .options(
+                selectinload(TicketPanel.form).selectinload(TicketForm.fields),
+            )
         )
         return result.scalar_one_or_none()
 
@@ -283,7 +338,7 @@ class TicketService:
         result = await session.execute(
             select(Ticket)
             .where(Ticket.guild_id == guild_id, Ticket.is_closed == False)
-            .options(selectinload(Ticket.status))
+            .options(selectinload(Ticket.status), selectinload(Ticket.assignees))
             .order_by(Ticket.id.desc())
             .limit(limit)
         )

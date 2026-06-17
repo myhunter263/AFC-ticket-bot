@@ -3,6 +3,7 @@ import logging
 from typing import AsyncGenerator, Optional
 
 from asyncpg.exceptions import InvalidAuthorizationSpecificationError, InvalidPasswordError
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from config import config
@@ -55,6 +56,12 @@ async def init_db() -> None:
         try:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
+                await conn.execute(
+                    text("ALTER TABLE ticket_panels ADD COLUMN IF NOT EXISTS ping_role_ids JSONB")
+                )
+                await conn.execute(
+                    text("ALTER TABLE ticket_panels ADD COLUMN IF NOT EXISTS viewer_role_ids JSONB")
+                )
             logger.info("Database initialized successfully.")
             return
         except Exception as exc:

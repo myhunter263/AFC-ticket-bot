@@ -38,6 +38,7 @@ class Guild(Base):
     tickets: Mapped[List["Ticket"]] = relationship(back_populates="guild", cascade="all, delete-orphan")
     staff_roles: Mapped[List["StaffRole"]] = relationship(back_populates="guild", cascade="all, delete-orphan")
     audit_logs: Mapped[List["AuditLog"]] = relationship(back_populates="guild", cascade="all, delete-orphan")
+    user_points: Mapped[List["UserPoints"]] = relationship(back_populates="guild", cascade="all, delete-orphan")
     notification_settings: Mapped[Optional["NotificationSettings"]] = relationship(
         back_populates="guild", cascade="all, delete-orphan", uselist=False
     )
@@ -60,6 +61,8 @@ class TicketPanel(Base):
     form_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("ticket_forms.id", ondelete="SET NULL"), nullable=True
     )
+    ping_role_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    viewer_role_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     button_label: Mapped[str] = mapped_column(String(80), default="Создать заявку")
     button_emoji: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -168,6 +171,12 @@ class Ticket(Base):
     responses: Mapped[List["TicketResponse"]] = relationship(
         back_populates="ticket", cascade="all, delete-orphan"
     )
+    assignees: Mapped[List["TicketAssignee"]] = relationship(
+        back_populates="ticket", cascade="all, delete-orphan"
+    )
+    reports: Mapped[List["TicketReport"]] = relationship(
+        back_populates="ticket", cascade="all, delete-orphan", order_by="TicketReport.created_at"
+    )
 
 
 class TicketResponse(Base):
@@ -242,3 +251,46 @@ class LogSettings(Base):
     channel_admin: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
 
     guild: Mapped["Guild"] = relationship(back_populates="log_settings")
+
+
+class TicketAssignee(Base):
+    __tablename__ = "ticket_assignees"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticket_id: Mapped[int] = mapped_column(Integer, ForeignKey("tickets.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    assigned_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+    assigned_by: Mapped[int] = mapped_column(BigInteger)
+
+    ticket: Mapped["Ticket"] = relationship(back_populates="assignees")
+
+    __table_args__ = (UniqueConstraint("ticket_id", "user_id", name="uq_ticket_assignee"),)
+
+
+class TicketReport(Base):
+    __tablename__ = "ticket_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticket_id: Mapped[int] = mapped_column(Integer, ForeignKey("tickets.id", ondelete="CASCADE"))
+    author_id: Mapped[int] = mapped_column(BigInteger)
+    content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    ticket: Mapped["Ticket"] = relationship(back_populates="reports")
+
+
+class UserPoints(Base):
+    __tablename__ = "user_points"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("guilds.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    points: Mapped[int] = mapped_column(Integer, default=0)
+    total_earned: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    guild: Mapped["Guild"] = relationship(back_populates="user_points")
+
+    __table_args__ = (UniqueConstraint("guild_id", "user_id", name="uq_user_points"),)

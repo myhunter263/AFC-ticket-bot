@@ -11,9 +11,12 @@ from config import config
 from database.models import LogSettings, NotificationSettings, StaffRole, Ticket, TicketStatus
 from database.session import async_session_maker
 from services.audit_service import AuditService
+from services.points_service import PointsService
 from services.status_service import StatusService
 from services.ticket_service import TicketService
 from ui.modals.ticket_modal import TicketCreateModal
+from ui.modals.report_modal import ReportModal, AwardPointsModal
+from utils.auto_delete import respond_and_delete, schedule_delete
 from utils.embeds import EmbedBuilder
 from utils.permissions import PermissionChecker
 from utils.transcript import TranscriptGenerator
@@ -79,10 +82,14 @@ class TicketPanelButtonView(discord.ui.View):
                 ]
             panel_name = panel.name
             category_id = panel.category_id
+            ping_role_ids = panel.ping_role_ids or []
+            viewer_role_ids = panel.viewer_role_ids or []
 
         if form_fields:
             async def on_modal_submit(inter: discord.Interaction, responses: list[dict]) -> None:
-                await _finish_ticket_creation(inter, self.panel_id, form_id, responses, category_id)
+                await _finish_ticket_creation(
+                    inter, self.panel_id, form_id, responses, category_id, ping_role_ids, viewer_role_ids
+                )
 
             modal = TicketCreateModal(
                 panel_name=panel_name,
@@ -92,7 +99,9 @@ class TicketPanelButtonView(discord.ui.View):
             await interaction.response.send_modal(modal)
         else:
             await interaction.response.defer(ephemeral=True)
-            await _finish_ticket_creation(interaction, self.panel_id, None, [], category_id)
+            await _finish_ticket_creation(
+                interaction, self.panel_id, None, [], category_id, ping_role_ids, viewer_role_ids
+            )
 
 
 async def _finish_ticket_creation(
@@ -101,6 +110,8 @@ async def _finish_ticket_creation(
     form_id: Optional[int],
     responses: list[dict],
     category_id: Optional[int],
+    ping_role_ids: list,
+    viewer_role_ids: list,
 ) -> None:
     guild = interaction.guild
     user = interaction.user
@@ -132,6 +143,18 @@ async def _finish_ticket_creation(
                 overwrites[role] = discord.PermissionOverwrite(
                     view_channel=True, send_messages=True, manage_messages=True
                 )
+
+    # Viewer roles — can see and write, no manage rights
+    for role_id in viewer_role_ids:
+        role = guild.get_role(role_id)
+        if role:
+            overwrites[role] = discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                attach_files=True,
+                embed_links=True,
+                read_message_history=True,
+            )
 
     try:
         channel = await guild.create_text_channel(
@@ -190,7 +213,7 @@ async def _finish_ticket_creation(
             "closed_at": None, "assignee_id": None,
         })(),
         author=member or user,
-        assignee=None,
+        assignees=[],
         status_name=status_name,
         status_color=status_color,
         status_emoji=status_emoji,
@@ -216,6 +239,17 @@ async def _finish_ticket_creation(
             color=config.COLOR_INFO,
         )
     )
+
+    # Ping roles configured for this panel
+    if ping_role_ids:
+        mentions = " ".join(f"<@&{rid}>" for rid in ping_role_ids)
+        try:
+            await channel.send(
+                content=mentions,
+                allowed_mentions=discord.AllowedMentions(roles=True),
+            )
+        except discord.HTTPException:
+            pass
 
     notify_embed = EmbedBuilder.success(
         "Заявка создана",
@@ -251,38 +285,65 @@ class TicketView(discord.ui.View):
         self.ticket_id = ticket_id
         self.guild_id = guild_id
 
-    @discord.ui.button(label="Назначить себя", style=discord.ButtonStyle.primary, emoji="👤", row=0, custom_id="tv:assign")
-    async def assign_self(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+    @discord.ui.button(label="Взяться за тикет", style=discord.ButtonStyle.primary, emoji="🙋", row=0, custom_id="tv:claim")
+    async def claim_ticket(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         async with async_session_maker() as session:
-            if not await PermissionChecker.is_staff(interaction, session):
-                await interaction.response.send_message(
-                    embed=EmbedBuilder.error("Нет доступа", "Только сотрудники могут назначать исполнителей."),
-                    ephemeral=True,
-                )
-                return
             ticket = await TicketService.get_by_id(session, self.ticket_id)
             if not ticket:
                 await interaction.response.send_message(
                     embed=EmbedBuilder.error("Ошибка", "Заявка не найдена."), ephemeral=True
                 )
                 return
-            await TicketService.assign(session, ticket, interaction.user.id)
-            await AuditService.log(
-                session,
-                guild_id=self.guild_id,
-                user_id=interaction.user.id,
-                user_name=str(interaction.user),
-                action="assign_ticket",
-                target_type="ticket",
-                target_id=self.ticket_id,
-            )
-            await session.commit()
+            if ticket.is_closed:
+                await interaction.response.send_message(
+                    embed=EmbedBuilder.warning("Закрыта", "Заявка уже закрыта."), ephemeral=True
+                )
+                return
 
-        embed = EmbedBuilder.success(
-            "Назначено",
-            f"{interaction.user.mention} назначен исполнителем заявки.",
-        )
-        await interaction.response.send_message(embed=embed)
+            success, was_already = await TicketService.claim(
+                session, ticket, interaction.user.id, interaction.user.id
+            )
+
+            if was_already:
+                unclaimed = await TicketService.unclaim(session, ticket, interaction.user.id)
+                await AuditService.log(
+                    session,
+                    guild_id=self.guild_id,
+                    user_id=interaction.user.id,
+                    user_name=str(interaction.user),
+                    action="unclaim_ticket",
+                    target_type="ticket",
+                    target_id=self.ticket_id,
+                )
+                await session.commit()
+
+                await interaction.response.send_message(
+                    embed=EmbedBuilder.info(
+                        "Вы отказались от тикета",
+                        f"{interaction.user.mention} больше не является исполнителем.",
+                    ),
+                )
+                schedule_delete(interaction, delay=6.0)
+            else:
+                await AuditService.log(
+                    session,
+                    guild_id=self.guild_id,
+                    user_id=interaction.user.id,
+                    user_name=str(interaction.user),
+                    action="claim_ticket",
+                    target_type="ticket",
+                    target_id=self.ticket_id,
+                )
+                await session.commit()
+
+                await interaction.response.send_message(
+                    embed=EmbedBuilder.success(
+                        "Тикет взят",
+                        f"{interaction.user.mention} взялся за заявку.",
+                    ),
+                )
+                schedule_delete(interaction, delay=6.0)
+
         await _refresh_ticket_embed(interaction, self.ticket_id)
 
     @discord.ui.button(label="Сменить статус", style=discord.ButtonStyle.secondary, emoji="🏷️", row=0, custom_id="tv:status")
@@ -297,7 +358,7 @@ class TicketView(discord.ui.View):
 
         if not statuses:
             await interaction.response.send_message(
-                embed=EmbedBuilder.warning("Нет статусов", "Создайте статусы через /admin."),
+                embed=EmbedBuilder.warning("Нет статусов", "Создайте статусы через /afc-admin."),
                 ephemeral=True,
             )
             return
@@ -330,7 +391,7 @@ class TicketView(discord.ui.View):
 
         view = TransferView(self.ticket_id, self.guild_id)
         await interaction.response.send_message(
-            embed=EmbedBuilder.info("Передача заявки", "Упомяните сотрудника для передачи заявки:"),
+            embed=EmbedBuilder.info("Передача заявки", "Выберите сотрудника для передачи заявки:"),
             view=view,
             ephemeral=True,
         )
@@ -396,9 +457,8 @@ class TicketView(discord.ui.View):
         await channel.set_permissions(
             interaction.guild.default_role, view_channel=False
         )
-        await interaction.response.send_message(
-            embed=EmbedBuilder.success("Заявка переоткрыта", "Заявка снова открыта.")
-        )
+        await interaction.response.send_message(embed=EmbedBuilder.success("Заявка переоткрыта", "Заявка снова открыта."))
+        schedule_delete(interaction, delay=6.0)
         await _refresh_ticket_embed(interaction, self.ticket_id)
 
     @discord.ui.button(label="Экспорт", style=discord.ButtonStyle.secondary, emoji="📄", row=1, custom_id="tv:export")
@@ -444,7 +504,104 @@ class TicketView(discord.ui.View):
             ephemeral=True,
         )
 
-    @discord.ui.button(label="Удалить", style=discord.ButtonStyle.danger, emoji="🗑️", row=2, custom_id="tv:delete")
+    @discord.ui.button(label="Отчёт", style=discord.ButtonStyle.secondary, emoji="📝", row=2, custom_id="tv:report")
+    async def submit_report(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        async with async_session_maker() as session:
+            ticket = await TicketService.get_by_id(session, self.ticket_id)
+            if not ticket:
+                await interaction.response.send_message(
+                    embed=EmbedBuilder.error("Ошибка", "Заявка не найдена."), ephemeral=True
+                )
+                return
+            if ticket.is_closed:
+                await interaction.response.send_message(
+                    embed=EmbedBuilder.warning("Закрыта", "Нельзя добавить отчёт к закрытой заявке."),
+                    ephemeral=True,
+                )
+                return
+            # Allow ticket author, assignees, and staff
+            user_id = interaction.user.id
+            is_assignee = any(a.user_id == user_id for a in ticket.assignees)
+            is_author = ticket.author_id == user_id
+            is_staff = await PermissionChecker.is_staff(interaction, session)
+
+        if not (is_assignee or is_author or is_staff):
+            await interaction.response.send_message(
+                embed=EmbedBuilder.error(
+                    "Нет доступа",
+                    "Отчёт могут отправлять автор заявки, исполнители или персонал.",
+                ),
+                ephemeral=True,
+            )
+            return
+
+        ticket_id = self.ticket_id
+
+        async def _on_report(inter: discord.Interaction, content: str) -> None:
+            async with async_session_maker() as sess:
+                await TicketService.add_report(sess, ticket_id, inter.user.id, content)
+                await AuditService.log(
+                    sess,
+                    guild_id=self.guild_id,
+                    user_id=inter.user.id,
+                    user_name=str(inter.user),
+                    action="add_report",
+                    target_type="ticket",
+                    target_id=ticket_id,
+                )
+                await sess.commit()
+
+            report_embed = discord.Embed(
+                title="📝 Отчёт о выполнении",
+                description=content,
+                color=config.COLOR_SUCCESS,
+            )
+            report_embed.set_author(name=str(inter.user), icon_url=inter.user.display_avatar.url)
+            report_embed.timestamp = __import__("datetime").datetime.utcnow()
+
+            await inter.channel.send(embed=report_embed)
+            await respond_and_delete(
+                inter,
+                EmbedBuilder.success("Отчёт добавлен", "Ваш отчёт опубликован в канале заявки."),
+            )
+
+        modal = ReportModal(on_submit=_on_report)
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label="Начислить баллы", style=discord.ButtonStyle.secondary, emoji="⭐", row=2, custom_id="tv:award")
+    async def award_points(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        async with async_session_maker() as session:
+            ticket = await TicketService.get_by_id(session, self.ticket_id)
+            if not ticket:
+                await interaction.response.send_message(
+                    embed=EmbedBuilder.error("Ошибка", "Заявка не найдена."), ephemeral=True
+                )
+                return
+            user_id = interaction.user.id
+            is_author = ticket.author_id == user_id
+            is_staff = await PermissionChecker.is_staff(interaction, session)
+
+        if not (is_author or is_staff):
+            await interaction.response.send_message(
+                embed=EmbedBuilder.error(
+                    "Нет доступа",
+                    "Баллы может начислять автор заявки или персонал.",
+                ),
+                ephemeral=True,
+            )
+            return
+
+        view = AwardSelectView(self.ticket_id, self.guild_id)
+        await interaction.response.send_message(
+            embed=EmbedBuilder.info(
+                "Начислить баллы",
+                "Выберите пользователя, которому хотите начислить баллы:",
+            ),
+            view=view,
+            ephemeral=True,
+        )
+
+    @discord.ui.button(label="Удалить", style=discord.ButtonStyle.danger, emoji="🗑️", row=3, custom_id="tv:delete")
     async def delete_ticket(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         async with async_session_maker() as session:
             if not await PermissionChecker.is_bot_admin(interaction, session):
@@ -463,6 +620,61 @@ class TicketView(discord.ui.View):
             view=view,
             ephemeral=True,
         )
+
+
+class AwardSelectView(discord.ui.View):
+    def __init__(self, ticket_id: int, guild_id: int) -> None:
+        super().__init__(timeout=60)
+        self.ticket_id = ticket_id
+        self.guild_id = guild_id
+
+        user_select = discord.ui.UserSelect(placeholder="Выберите пользователя...")
+        user_select.callback = self._select_user
+        self.add_item(user_select)
+        self._user_select = user_select
+
+    async def _select_user(self, interaction: discord.Interaction) -> None:
+        target = self._user_select.values[0]
+        ticket_id = self.ticket_id
+        guild_id = self.guild_id
+
+        async def _on_award(inter: discord.Interaction, user: discord.Member, amount: int, reason: str) -> None:
+            async with async_session_maker() as session:
+                entry = await PointsService.award(session, guild_id, user.id, amount)
+                await AuditService.log(
+                    session,
+                    guild_id=guild_id,
+                    user_id=inter.user.id,
+                    user_name=str(inter.user),
+                    action="award_points",
+                    target_type="user",
+                    target_id=user.id,
+                    details={"amount": amount, "reason": reason, "ticket_id": ticket_id},
+                )
+                await session.commit()
+                new_total = entry.points
+
+            award_embed = discord.Embed(
+                title="⭐ Баллы начислены",
+                description=(
+                    f"{user.mention} получил **+{amount} баллов**!\n"
+                    + (f"Причина: {reason}\n" if reason else "")
+                    + f"Всего баллов: **{new_total}**"
+                ),
+                color=config.COLOR_SUCCESS,
+            )
+            award_embed.set_author(name=str(inter.user), icon_url=inter.user.display_avatar.url)
+            await inter.channel.send(embed=award_embed)
+            await respond_and_delete(
+                inter,
+                EmbedBuilder.success(
+                    "Баллы начислены",
+                    f"{user.mention} получил **{amount}** баллов. Итого: **{new_total}**.",
+                ),
+            )
+
+        modal = AwardPointsModal(target_user=target, on_submit=_on_award)
+        await interaction.response.send_modal(modal)
 
 
 class StatusChangeView(discord.ui.View):
@@ -506,9 +718,9 @@ class StatusChangeView(discord.ui.View):
                 color=new_status.color,
             )
         )
-        await interaction.response.send_message(
-            embed=EmbedBuilder.success("Статус изменён", f"Новый статус: **{new_status.name}**"),
-            ephemeral=True,
+        await respond_and_delete(
+            interaction,
+            EmbedBuilder.success("Статус изменён", f"Новый статус: **{new_status.name}**"),
         )
         await _refresh_ticket_embed(interaction, self.ticket_id)
 
@@ -533,7 +745,8 @@ class TransferView(discord.ui.View):
                     embed=EmbedBuilder.error("Ошибка", "Заявка не найдена."), ephemeral=True
                 )
                 return
-            await TicketService.assign(session, ticket, member.id)
+            # Add as assignee
+            await TicketService.claim(session, ticket, member.id, interaction.user.id)
             await AuditService.log(
                 session,
                 guild_id=self.guild_id,
@@ -553,9 +766,9 @@ class TransferView(discord.ui.View):
                 color=config.COLOR_INFO,
             )
         )
-        await interaction.response.send_message(
-            embed=EmbedBuilder.success("Передано", f"Заявка передана {member.mention}."),
-            ephemeral=True,
+        await respond_and_delete(
+            interaction,
+            EmbedBuilder.success("Передано", f"Заявка передана {member.mention}."),
         )
         await _refresh_ticket_embed(interaction, self.ticket_id)
 
@@ -684,7 +897,7 @@ async def _refresh_ticket_embed(interaction: discord.Interaction, ticket_id: int
             status_name = status.name if status else "Неизвестно"
             status_color = status.color if status else config.COLOR_PRIMARY
             status_emoji = status.emoji or "" if status else ""
-            assignee_id = ticket.assignee_id
+            assignee_user_ids = [a.user_id for a in ticket.assignees]
             message_id = ticket.message_id
 
         channel = interaction.channel
@@ -695,12 +908,12 @@ async def _refresh_ticket_embed(interaction: discord.Interaction, ticket_id: int
 
         guild = interaction.guild
         author = guild.get_member(ticket.author_id)
-        assignee = guild.get_member(assignee_id) if assignee_id else None
+        assignees = [m for uid in assignee_user_ids if (m := guild.get_member(uid))]
 
         embed = EmbedBuilder.ticket_card(
             ticket=ticket,
             author=author or interaction.user,
-            assignee=assignee,
+            assignees=assignees,
             status_name=status_name,
             status_color=status_color,
             status_emoji=status_emoji,

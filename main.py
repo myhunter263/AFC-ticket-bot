@@ -25,6 +25,7 @@ COGS = [
     "cogs.setup",
     "cogs.admin",
     "cogs.tickets",
+    "cogs.points",
 ]
 
 

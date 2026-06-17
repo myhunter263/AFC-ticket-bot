@@ -48,7 +48,7 @@ class EmbedBuilder:
     def ticket_card(
         ticket,
         author: discord.Member,
-        assignee: Optional[discord.Member],
+        assignees: list,
         status_name: str,
         status_color: int,
         status_emoji: str,
@@ -64,16 +64,25 @@ class EmbedBuilder:
         embed.add_field(name="Статус", value=status_display, inline=True)
         embed.add_field(name="Автор", value=author.mention, inline=True)
 
-        if assignee:
-            embed.add_field(name="Исполнитель", value=assignee.mention, inline=True)
+        if assignees:
+            assignees_text = "\n".join(
+                m.mention if hasattr(m, "mention") else str(m) for m in assignees
+            )
+            embed.add_field(name=f"Исполнители ({len(assignees)})", value=assignees_text, inline=True)
         else:
-            embed.add_field(name="Исполнитель", value="Не назначен", inline=True)
+            embed.add_field(name="Исполнители", value="Никто не взялся", inline=True)
 
         if responses:
             embed.add_field(name="​", value="**Данные заявки:**", inline=False)
             for resp in responses:
-                value = resp.value if len(resp.value) <= 1024 else resp.value[:1021] + "..."
-                embed.add_field(name=resp.field_label, value=value, inline=False)
+                if isinstance(resp, dict):
+                    label = resp.get("field_label", "Поле")
+                    value = resp.get("value", "")
+                else:
+                    label = resp.field_label
+                    value = resp.value
+                value = value if len(value) <= 1024 else value[:1021] + "..."
+                embed.add_field(name=label, value=value, inline=False)
 
         created_ts = int(ticket.created_at.timestamp())
         embed.add_field(name="Создана", value=f"<t:{created_ts}:F>", inline=True)
