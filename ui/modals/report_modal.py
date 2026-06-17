@@ -67,7 +67,16 @@ class AwardPointsModal(discord.ui.Modal, title="Начислить баллы"):
                 ephemeral=True,
             )
             return
+        await interaction.response.defer(ephemeral=True)
         await self._callback(interaction, self.target_user, amt, self.reason.value or "")
 
     async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
         logger.exception("Error in AwardPointsModal: %s", error)
+        try:
+            embed = discord.Embed(title="❌ Ошибка", description="Не удалось начислить баллы. Попробуйте ещё раз.", color=0xED4245)
+            if interaction.response.is_done():
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            else:
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+        except Exception:
+            pass
