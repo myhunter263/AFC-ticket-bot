@@ -519,9 +519,13 @@ class TransferView(discord.ui.View):
         self.ticket_id = ticket_id
         self.guild_id = guild_id
 
-    @discord.ui.user_select(placeholder="Выберите сотрудника...")
-    async def select_user(self, interaction: discord.Interaction, select: discord.ui.UserSelect) -> None:
-        member = select.values[0]
+        user_select = discord.ui.UserSelect(placeholder="Выберите сотрудника...")
+        user_select.callback = self._select_user
+        self.add_item(user_select)
+        self._user_select = user_select
+
+    async def _select_user(self, interaction: discord.Interaction) -> None:
+        member = self._user_select.values[0]
         async with async_session_maker() as session:
             ticket = await TicketService.get_by_id(session, self.ticket_id)
             if not ticket:

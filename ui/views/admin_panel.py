@@ -298,23 +298,36 @@ class PanelSetupView(discord.ui.View):
         self.selected_form_id: int | None = None
         self.selected_category_id: int | None = None
 
-    @discord.ui.channel_select(placeholder="Выберите канал для панели...", channel_types=[discord.ChannelType.text])
-    async def select_channel(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect) -> None:
-        self.selected_channel_id = select.values[0].id
+        ch_select = discord.ui.ChannelSelect(
+            placeholder="Выберите канал для панели...",
+            channel_types=[discord.ChannelType.text],
+            row=0,
+        )
+        ch_select.callback = self._select_channel
+        self.add_item(ch_select)
+        self._ch_select = ch_select
+
+        cat_select = discord.ui.ChannelSelect(
+            placeholder="Выберите категорию для тикетов (необязательно)...",
+            channel_types=[discord.ChannelType.category],
+            min_values=0,
+            max_values=1,
+            row=1,
+        )
+        cat_select.callback = self._select_category
+        self.add_item(cat_select)
+        self._cat_select = cat_select
+
+    async def _select_channel(self, interaction: discord.Interaction) -> None:
+        self.selected_channel_id = self._ch_select.values[0].id
         await interaction.response.send_message(
             embed=EmbedBuilder.success("Канал выбран", f"Выбран канал: <#{self.selected_channel_id}>"),
             ephemeral=True,
         )
 
-    @discord.ui.channel_select(
-        placeholder="Выберите категорию (необязательно)...",
-        channel_types=[discord.ChannelType.category],
-        min_values=0,
-        max_values=1,
-    )
-    async def select_category(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect) -> None:
-        if select.values:
-            self.selected_category_id = select.values[0].id
+    async def _select_category(self, interaction: discord.Interaction) -> None:
+        if self._cat_select.values:
+            self.selected_category_id = self._cat_select.values[0].id
             await interaction.response.send_message(
                 embed=EmbedBuilder.success("Категория выбрана", f"Тикеты будут создаваться в <#{self.selected_category_id}>."),
                 ephemeral=True,
@@ -557,9 +570,16 @@ class RoleManageView(discord.ui.View):
         super().__init__(timeout=180)
         self.guild_id = guild_id
 
-    @discord.ui.role_select(placeholder="Выберите роль для добавления в персонал...", row=0)
-    async def select_role(self, interaction: discord.Interaction, select: discord.ui.RoleSelect) -> None:
-        role = select.values[0]
+        role_select = discord.ui.RoleSelect(
+            placeholder="Выберите роль для добавления в персонал...",
+            row=0,
+        )
+        role_select.callback = self._select_role
+        self.add_item(role_select)
+        self._role_select = role_select
+
+    async def _select_role(self, interaction: discord.Interaction) -> None:
+        role = self._role_select.values[0]
         view = RoleTypeSelectView(self.guild_id, role.id, role.name)
         await interaction.response.send_message(
             embed=EmbedBuilder.info(
@@ -768,12 +788,16 @@ class LogChannelPickerView(discord.ui.View):
         self.field = field
         self.label = label
 
-    @discord.ui.channel_select(
-        placeholder="Выберите канал...",
-        channel_types=[discord.ChannelType.text],
-    )
-    async def pick_channel(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect) -> None:
-        channel = select.values[0]
+        ch_select = discord.ui.ChannelSelect(
+            placeholder="Выберите канал...",
+            channel_types=[discord.ChannelType.text],
+        )
+        ch_select.callback = self._pick_channel
+        self.add_item(ch_select)
+        self._ch_select = ch_select
+
+    async def _pick_channel(self, interaction: discord.Interaction) -> None:
+        channel = self._ch_select.values[0]
         async with async_session_maker() as session:
             settings = await TicketService.get_or_create_log_settings(session, self.guild_id)
             setattr(settings, self.field, channel.id)
