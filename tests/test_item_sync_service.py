@@ -15,6 +15,7 @@ from database.models import (
     TicketStatus,
 )
 from services.item_sync_service import ItemSyncService
+from services.item_catalog_service import ItemCatalogService
 from tests.test_foxholehq_provider import StaticProvider, normalized_dataset
 
 
@@ -50,6 +51,37 @@ async def test_sync_is_noop_for_same_hash_and_preserves_local_data(db_session):
     localization = (await db_session.execute(select(FoxholeItemLocalization))).scalar_one()
     assert localization.ru_name == "Винтовка"
     assert (await db_session.execute(select(FoxholeItemAlias))).scalar_one().alias == "винтарь"
+
+
+@pytest.mark.asyncio
+async def test_seed_aliases_are_deduplicated_after_normalization(db_session):
+    items = []
+    recipes = []
+    for name, category, item_type, cost, crate_size in (
+        ("Argenti r.II Rifle", "smallarms", "Rifle", {"bmat": 100}, 20),
+        ("7.62mm", "smallarms", "Ammunition", {"bmat": 80}, 40),
+        ("86K-a 'Bardiche'", "vehicles", "Tank", {"rmat": 495}, 3),
+    ):
+        normalized_items, normalized_recipes = normalized_dataset(name=name)
+        normalized_items[0]["category"] = category
+        normalized_items[0]["is_vehicle"] = category == "vehicles"
+        normalized_items[0]["crate_size"] = crate_size
+        normalized_items[0]["vehicle_crate_size"] = crate_size if category == "vehicles" else 1
+        normalized_items[0]["factory_cost"] = (
+            {"rmat": 165} if category == "vehicles" else cost
+        )
+        normalized_items[0]["raw_data"]["type"] = item_type
+        items.extend(normalized_items)
+        recipes.extend(normalized_recipes)
+
+    await ItemSyncService.sync(db_session, 1, StaticProvider(items, recipes, "seed-hash"))
+    await ItemCatalogService.ensure_seed(db_session, 1)
+    await db_session.commit()
+
+    aliases = list((await db_session.execute(select(FoxholeItemAlias))).scalars().all())
+    keys = [(alias.localization_id, alias.normalized_alias) for alias in aliases]
+    assert len(keys) == len(set(keys))
+    assert sum(alias.normalized_alias == "7.62" for alias in aliases) == 1
 
 
 @pytest.mark.asyncio

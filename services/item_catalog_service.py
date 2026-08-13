@@ -162,6 +162,7 @@ class ItemCatalogService:
                         alias=alias,
                         normalized_alias=normalized,
                     ))
+                    existing.add(normalized)
         await session.flush()
 
     @staticmethod
