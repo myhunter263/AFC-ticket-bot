@@ -18,6 +18,7 @@ from services.item_catalog_service import ItemCatalogService
 from services.item_sync_service import ItemSyncService
 from services.item_resolver import ItemResolver
 from services.unknown_query_service import UnknownQueryService
+from services.recipe_audit_service import RecipeAuditService
 from ui.views.admin_panel import AdminPanelView
 from utils.embeds import EmbedBuilder
 from utils.permissions import PermissionChecker
@@ -340,6 +341,94 @@ class AdminCog(commands.Cog):
         ) or "Неизвестных запросов пока нет."
         await interaction.response.send_message(
             embed=discord.Embed(title="Неизвестные названия", description=description[:4096], color=0xFEE75C),
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="foxhole_dictionary_status", description="[AFC] Покрытие русского словаря Foxhole")
+    @app_commands.guild_only()
+    async def dictionary_status(self, interaction: discord.Interaction) -> None:
+        if not await self._require_admin(interaction):
+            return
+        async with async_session_maker() as session:
+            await ItemCatalogService.ensure_seed(session, interaction.guild_id)
+            status = await ItemCatalogService.dictionary_status(session, interaction.guild_id)
+            await session.commit()
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="Русский словарь Foxhole",
+                description=(
+                    f"Всего предметов FoxholeHQ: **{status['total']}**\n"
+                    f"Имеют русское название: **{status['translated']}**\n"
+                    f"Имеют aliases: **{status['with_aliases']}**\n"
+                    f"Без русского словаря: **{status['without_dictionary']}**"
+                ),
+                color=0x5865F2,
+            ),
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="item_price_debug", description="[AFC] Проверить цену предмета Foxhole")
+    @app_commands.describe(query="Русское, английское название или алиас")
+    @app_commands.guild_only()
+    async def item_price_debug(self, interaction: discord.Interaction, query: str) -> None:
+        if not await self._require_admin(interaction):
+            return
+        async with async_session_maker() as session:
+            catalog = await ItemCatalogService.get_catalog(session, interaction.guild_id)
+            await session.commit()
+        resolved = ItemResolver(catalog).resolve(query)
+        from services.foxhole_types import ResolvedItem
+        if not isinstance(resolved, ResolvedItem):
+            await interaction.response.send_message(
+                embed=EmbedBuilder.warning("Предмет не определён", query), ephemeral=True
+            )
+            return
+        data = RecipeAuditService.item_debug(resolved.item)
+        standard = data["standard"] or {}
+        mpf = data["mpf"] or {}
+        description = (
+            f"**Item:** {data['name']} (`{data['api_name']}`)\n"
+            f"**FoxholeHQ ID:** `{data['api_id']}`\n\n"
+            f"**{resolved.item.factory_site or 'Factory'}:** `{standard.get('materials') or resolved.item.factory_cost}`\n"
+            f"Output: `{standard.get('output_quantity', 1)} {standard.get('output_unit', 'unknown')}`\n\n"
+            f"**MPF:** `{mpf.get('materials') or 'недоступно'}`\n"
+            f"Output: `{mpf.get('output_quantity', '—')} {mpf.get('output_unit', '')}`\n"
+            f"Vehicles per crate: `{(mpf.get('raw_data') or {}).get('vehicles_per_crate') or '—'}`\n"
+            f"Max queue: `{data['mpf_queues']}`\n"
+            f"Max queue cost: `{data['mpf_max_queue_cost'] or '—'}`\n\n"
+            f"**Source:** `{data['source']} {data['source_version'] or ''}`\n"
+            f"**Local override:** `{'да' if data['overrides'] else 'нет'}`\n"
+            f"**Validation:** `{data['validation']}`"
+        )
+        await interaction.response.send_message(
+            embed=discord.Embed(title="Проверка цены", description=description[:4096], color=0x5865F2),
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="foxhole_price_audit", description="[AFC] Массовый аудит цен FoxholeHQ")
+    @app_commands.guild_only()
+    async def foxhole_price_audit(self, interaction: discord.Interaction) -> None:
+        if not await self._require_admin(interaction):
+            return
+        await interaction.response.defer(ephemeral=True)
+        async with async_session_maker() as session:
+            report = await RecipeAuditService.audit_database(session, interaction.guild_id)
+        details = (report.errors + report.warnings)[:20]
+        description = (
+            f"Проверено предметов: **{report.item_count}**\n"
+            f"Рецептов: **{report.recipe_count}**\n"
+            f"Ошибок: **{len(report.errors)}**\n"
+            f"Предупреждений: **{len(report.warnings)}**\n"
+            f"Garage anomalies: **{report.garage_anomalies}**\n"
+            f"Factory anomalies: **{report.factory_anomalies}**\n"
+            f"MPF anomalies: **{report.mpf_anomalies}**\n"
+            f"Missing recipes: **{report.missing_recipes}**\n"
+            f"Manual overrides: **{len(report.manual_overrides)}**"
+        )
+        if details:
+            description += "\n\n" + "\n".join(f"• {line}" for line in details)
+        await interaction.followup.send(
+            embed=discord.Embed(title="Аудит цен FoxholeHQ", description=description[:4096], color=0x57F287 if not report.errors else 0xED4245),
             ephemeral=True,
         )
 

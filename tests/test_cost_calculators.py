@@ -18,8 +18,8 @@ def test_mpf_max_discount_batch_and_rounding():
     cost, crates = MPFCostCalculator().reference_cost(item)
     assert crates == 9
     assert cost == {
-        "bmat": sum(int(101 * (1 - min(index * 0.1, 0.5))) for index in range(9)),
-        "rmat": sum(int(21 * (1 - min(index * 0.1, 0.5))) for index in range(9)),
+        "bmat": sum(__import__("math").ceil(101 * max(0.5, 0.9 - index * 0.1)) for index in range(9)),
+        "rmat": sum(__import__("math").ceil(21 * max(0.5, 0.9 - index * 0.1)) for index in range(9)),
     }
 
 
@@ -27,4 +27,4 @@ def test_vehicle_mpf_uses_vehicle_crates(catalog):
     bardiche = next(item for item in catalog if "bardiche" in item.api_name.casefold())
     cost, crates = MPFCostCalculator().reference_cost(bardiche)
     assert crates == 5
-    assert cost == {"rmat": 1979}
+    assert cost == {"rmat": 1734}

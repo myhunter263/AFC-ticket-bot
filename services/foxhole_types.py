@@ -26,6 +26,7 @@ class CatalogItem:
     synced_at: Any = None
     overrides: dict[str, Any] = field(default_factory=dict)
     resource_crate_sizes: dict[str, int] = field(default_factory=dict)
+    recipe_details: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

@@ -21,9 +21,9 @@ class ProductionCostCalculator:
 class MPFCostCalculator:
     @staticmethod
     def _discounted_total(base_per_crate: int, crates: int) -> int:
-        # Foxhole rounds each crate's discounted price down independently.
+        # FoxholeHQ applies 90%, 80%, ... 50% and rounds every queue up.
         return sum(
-            math.floor(base_per_crate * (1 - min(0.1 * index, 0.5)))
+            math.ceil(base_per_crate * max(0.5, 0.9 - 0.1 * index))
             for index in range(crates)
         )
 

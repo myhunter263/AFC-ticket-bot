@@ -107,6 +107,11 @@ def test_provider_normalizes_vehicle_factory_and_mpf_costs():
     assert tank["factory_cost"] == {"rmat": 165}
     assert tank["mpf_base_cost"] == {"rmat": 495}
     assert {row["production_method"] for row in tank_recipes} == {"garage", "mpf"}
+    garage = next(row for row in tank_recipes if row["production_method"] == "garage")
+    mpf = next(row for row in tank_recipes if row["production_method"] == "mpf")
+    assert (garage["output_quantity"], garage["output_unit"]) == (1, "vehicle")
+    assert (mpf["output_quantity"], mpf["output_unit"]) == (1, "vehicle_crate")
+    assert mpf["raw_data"]["vehicles_per_crate"] == 3
 
 
 class StaticProvider:

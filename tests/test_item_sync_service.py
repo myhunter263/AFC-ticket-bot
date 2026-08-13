@@ -112,6 +112,18 @@ async def test_seed_aliases_are_deduplicated_after_normalization(db_session):
             {"rmat": 165} if category == "vehicles" else cost
         )
         normalized_items[0]["raw_data"]["type"] = item_type
+        if category == "vehicles":
+            for recipe in normalized_recipes:
+                if recipe["production_method"] != "mpf":
+                    recipe["production_method"] = "garage"
+                    recipe["output_quantity"] = 1
+                    recipe["output_unit"] = "vehicle"
+                    recipe["materials"] = {"rmat": 165}
+                elif recipe["production_method"] == "mpf":
+                    recipe["output_quantity"] = 1
+                    recipe["output_unit"] = "vehicle_crate"
+                    recipe["materials"] = {"rmat": 495}
+                    recipe["raw_data"] = {"vehicles_per_crate": crate_size}
         items.extend(normalized_items)
         recipes.extend(normalized_recipes)
 

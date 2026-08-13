@@ -17,6 +17,7 @@ from database.models import (
 )
 from services.foxhole_api import FoxholeDataError, FoxholeDataProvider, FoxholeHQDataProvider
 from services.text_normalizer import TextNormalizer
+from services.recipe_audit_service import RecipeAuditService
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,14 @@ class ItemSyncService:
             logger.warning("FoxholeHQ sync rejected: %s", exc)
             return ItemSyncResult(success=False, error=str(exc))
 
+        audit = RecipeAuditService.audit_dataset(dataset)
+        if audit.errors:
+            message = "FoxholeHQ recipes не прошли аудит: " + "; ".join(audit.errors[:10])
+            state.last_error = message[:4000]
+            await session.flush()
+            logger.error(message)
+            return ItemSyncResult(success=False, error=message)
+
         if state.dataset_hash == dataset.dataset_hash:
             state.last_success_at = now
             state.last_error = None
@@ -78,6 +87,15 @@ class ItemSyncService:
         existing = list((await session.execute(
             select(FoxholeItem).options(selectinload(FoxholeItem.production_recipes))
         )).scalars().all())
+        comparison = RecipeAuditService.compare_with_existing(existing, dataset)
+        if comparison.errors:
+            message = "FoxholeHQ update отклонён: " + "; ".join(comparison.errors[:10])
+            state.last_error = message[:4000]
+            await session.flush()
+            logger.error(message)
+            return ItemSyncResult(success=False, error=message)
+        for change in comparison.warnings:
+            logger.warning("FoxholeHQ price change: %s", change)
         by_id = {item.api_id: item for item in existing}
         by_name = {
             TextNormalizer.normalize(item.api_name, remove_service_words=False): item

@@ -17,6 +17,7 @@ from database.models import (
     FoxholeSeedState,
 )
 from services.foxhole_api import FoxholeAPIClient
+from services.foxhole_transliteration import automatic_transliterations
 from services.foxhole_types import CatalogItem
 from services.item_sync_service import ItemSyncResult, ItemSyncService
 from services.text_normalizer import TextNormalizer
@@ -101,7 +102,41 @@ SEED_ITEMS = _load_seed_items()
 
 
 class ItemCatalogService:
-    SEED_VERSION = 1
+    SEED_VERSION = 2
+
+    @staticmethod
+    async def _upsert_seed_aliases(
+        session: AsyncSession,
+        localization: FoxholeItemLocalization,
+        aliases: list[str],
+        alias_type: str,
+        priority: int,
+    ) -> None:
+        existing_result = await session.execute(
+            select(FoxholeItemAlias).where(
+                FoxholeItemAlias.localization_id == localization.id
+            )
+        )
+        existing = {
+            alias.normalized_alias: alias for alias in existing_result.scalars().all()
+        }
+        for alias in aliases:
+            normalized = TextNormalizer.normalize(alias)
+            if not normalized:
+                continue
+            if normalized not in existing:
+                row = FoxholeItemAlias(
+                    localization_id=localization.id,
+                    alias=alias,
+                    normalized_alias=normalized,
+                    alias_type=alias_type,
+                    priority=priority,
+                )
+                session.add(row)
+                existing[normalized] = row
+            elif existing[normalized].created_by is None:
+                existing[normalized].alias_type = alias_type
+                existing[normalized].priority = priority
     @staticmethod
     def _cost(raw: dict[str, Any]) -> dict[str, int]:
         source = raw.get("cost") or raw.get("factory_cost") or raw.get("factoryCost") or {}
@@ -154,6 +189,37 @@ class ItemCatalogService:
         if seed_state and seed_state.seed_version >= ItemCatalogService.SEED_VERSION:
             return
         all_items = list((await session.execute(select(FoxholeItem))).scalars().all())
+        localization_by_item_id = {
+            row.item_id: row for row in (await session.execute(
+                select(FoxholeItemLocalization).where(
+                    FoxholeItemLocalization.guild_id == guild_id
+                )
+            )).scalars().all()
+        }
+        for item in all_items:
+            if not item.is_active:
+                continue
+            localization = localization_by_item_id.get(item.id)
+            if localization is None:
+                localization = FoxholeItemLocalization(
+                    guild_id=guild_id,
+                    item_id=item.id,
+                    ru_name=None,
+                    translation_status="missing",
+                )
+                session.add(localization)
+                await session.flush()
+                localization_by_item_id[item.id] = localization
+            generated = automatic_transliterations(item.api_name)
+            if (
+                generated
+                and (not localization.ru_name or localization.translation_status == "missing")
+            ):
+                localization.ru_name = generated[-1].capitalize()
+                localization.translation_status = "auto_transliterated"
+            await ItemCatalogService._upsert_seed_aliases(
+                session, localization, generated, "auto_transliteration", 70
+            )
         missing_items: list[str] = []
         for data in SEED_ITEMS:
             wanted_name = TextNormalizer.normalize(data["api_name"], remove_service_words=False)
@@ -188,29 +254,13 @@ class ItemCatalogService:
             elif not localization.ru_name or localization.translation_status == "missing":
                 localization.ru_name = data["ru_name"]
                 localization.translation_status = "translated"
-            existing_result = await session.execute(
-                select(FoxholeItemAlias).where(
-                    FoxholeItemAlias.localization_id == localization.id
-                )
+            await ItemCatalogService._upsert_seed_aliases(
+                session,
+                localization,
+                data["aliases"],
+                data.get("alias_type", "seed"),
+                int(data.get("priority", 100)),
             )
-            existing = {
-                alias.normalized_alias: alias for alias in existing_result.scalars().all()
-            }
-            for alias in data["aliases"]:
-                normalized = TextNormalizer.normalize(alias)
-                if normalized not in existing:
-                    row = FoxholeItemAlias(
-                        localization_id=localization.id,
-                        alias=alias,
-                        normalized_alias=normalized,
-                        alias_type=data.get("alias_type", "seed"),
-                        priority=int(data.get("priority", 100)),
-                    )
-                    session.add(row)
-                    existing[normalized] = row
-                elif existing[normalized].created_by is None:
-                    existing[normalized].alias_type = data.get("alias_type", "seed")
-                    existing[normalized].priority = int(data.get("priority", 100))
         if missing_items:
             logger.warning(
                 "Foxhole alias seed postponed; %d catalog items are not imported yet",
@@ -223,6 +273,26 @@ class ItemCatalogService:
             session.add(seed_state)
         seed_state.seed_version = ItemCatalogService.SEED_VERSION
         await session.flush()
+
+    @staticmethod
+    async def dictionary_status(session: AsyncSession, guild_id: int) -> dict[str, int]:
+        rows = list((await session.execute(
+            select(FoxholeItemLocalization)
+            .join(FoxholeItem)
+            .where(
+                FoxholeItemLocalization.guild_id == guild_id,
+                FoxholeItem.is_active == True,
+            )
+            .options(selectinload(FoxholeItemLocalization.aliases))
+        )).scalars().all())
+        return {
+            "total": len(rows),
+            "translated": sum(
+                bool(row.ru_name) and row.translation_status != "missing" for row in rows
+            ),
+            "with_aliases": sum(bool(row.aliases) for row in rows),
+            "without_dictionary": sum(not row.ru_name and not row.aliases for row in rows),
+        }
 
     @staticmethod
     async def get_catalog(session: AsyncSession, guild_id: int) -> list[CatalogItem]:
@@ -283,6 +353,16 @@ class ItemCatalogService:
                 synced_at=item.synced_at,
                 overrides=overrides,
                 resource_crate_sizes=resource_sizes,
+                recipe_details={
+                    method: {
+                        "method": recipe.production_method,
+                        "output_quantity": recipe.output_quantity,
+                        "output_unit": recipe.output_unit,
+                        "materials": recipe.materials or {},
+                        "raw_data": recipe.raw_data or {},
+                    }
+                    for method, recipe in recipes.items()
+                },
             ))
         return catalog
 

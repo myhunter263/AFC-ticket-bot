@@ -271,16 +271,33 @@ class FoxholeHQDataProvider(FoxholeDataProvider):
                 "output_quantity": 1,
                 "output_unit": "vehicle" if is_vehicle else "crate",
                 "materials": factory_cost,
-                "raw_data": raw_data,
+                "raw_data": {
+                    **raw_data,
+                    "source": cls.SOURCE,
+                    "source_version": version,
+                    "upstream_materials": cost,
+                    "normalization": (
+                        "vehicle_crate_cost_divided_by_crate_size"
+                        if is_vehicle and crate_size > 1 else "unchanged"
+                    ),
+                },
             })
             if mpf_available:
                 recipes.append({
                     "api_id": item["api_id"],
                     "production_method": "mpf",
-                    "output_quantity": crate_size if is_vehicle else 1,
-                    "output_unit": "vehicle" if is_vehicle else "crate",
+                    "output_quantity": 1,
+                    "output_unit": "vehicle_crate" if is_vehicle else "crate",
                     "materials": cost,
-                    "raw_data": raw_data,
+                    "raw_data": {
+                        **raw_data,
+                        "source": cls.SOURCE,
+                        "source_version": version,
+                        "upstream_materials": cost,
+                        "vehicles_per_crate": crate_size if is_vehicle else None,
+                        "crates_per_mpf_queue": 5 if is_vehicle else 9,
+                        "normalization": "unchanged",
+                    },
                 })
         items.sort(key=lambda value: value["api_id"])
         recipes.sort(key=lambda value: (value["api_id"], value["production_method"]))

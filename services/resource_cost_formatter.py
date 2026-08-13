@@ -1,6 +1,21 @@
 from __future__ import annotations
 
+import math
+
 from config import config
+
+
+def calculate_required_resource_crates(
+    resource_amount: int,
+    resource_crate_size: int,
+) -> int:
+    if resource_amount < 0:
+        raise ValueError("resource_amount cannot be negative")
+    if resource_crate_size <= 0:
+        raise ValueError("resource_crate_size must be positive")
+    if resource_amount == 0:
+        return 0
+    return math.ceil(resource_amount / resource_crate_size)
 
 
 class ResourceCostFormatter:
@@ -26,13 +41,8 @@ class ResourceCostFormatter:
         crate_size = self.crate_sizes.get(resource)
         if self.display == "raw" or not crate_size:
             return raw
-        crates, remainder = divmod(amount, crate_size)
-        if crates and remainder:
-            crated = f"{crates} {self._crate_word(crates)} + {remainder} {label}"
-        elif crates:
-            crated = f"{crates} {self._crate_word(crates)} {label}"
-        else:
-            crated = f"0 ящиков + {remainder} {label}"
+        crates = calculate_required_resource_crates(amount, crate_size)
+        crated = f"{crates} {self._crate_word(crates)} {label}"
         if self.display == "crate":
             return crated
         return f"{raw} или {crated}"
