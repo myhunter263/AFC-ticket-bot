@@ -9,3 +9,4 @@ psutil==5.9.8
 rapidfuzz==3.9.7
 pytest==8.3.2
 pytest-asyncio==0.24.0
+aiosqlite==0.20.0

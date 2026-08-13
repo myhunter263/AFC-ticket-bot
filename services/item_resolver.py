@@ -26,7 +26,7 @@ class ItemResolver:
         normalized = TextNormalizer.normalize(query)
         compact = TextNormalizer.compact(query)
 
-        # The order is intentional: community vocabulary wins over technical API names.
+        # The order is intentional: community vocabulary wins over upstream names.
         exact_groups = (
             ("alias", lambda item: item.aliases),
             ("ru_name", lambda item: [item.ru_name]),

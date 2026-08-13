@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import datetime
 import logging
 from typing import Any
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -15,6 +14,7 @@ from database.models import (
 )
 from services.foxhole_api import FoxholeAPIClient
 from services.foxhole_types import CatalogItem
+from services.item_sync_service import ItemSyncResult, ItemSyncService
 from services.text_normalizer import TextNormalizer
 
 logger = logging.getLogger(__name__)
@@ -116,13 +116,21 @@ class ItemCatalogService:
 
     @staticmethod
     async def ensure_seed(session: AsyncSession, guild_id: int) -> None:
+        all_items = list((await session.execute(select(FoxholeItem))).scalars().all())
         for data in SEED_ITEMS:
-            result = await session.execute(select(FoxholeItem).where(FoxholeItem.api_id == data["api_id"]))
-            item = result.scalar_one_or_none()
+            wanted_name = TextNormalizer.normalize(data["api_name"], remove_service_words=False)
+            item = next(
+                (
+                    row for row in all_items
+                    if row.api_id == data["api_id"] or TextNormalizer.normalize(
+                        row.api_name, remove_service_words=False
+                    ) == wanted_name
+                ),
+                None,
+            )
             if item is None:
-                item = FoxholeItem(**{key: value for key, value in data.items() if key not in {"ru_name", "aliases"}})
-                session.add(item)
-                await session.flush()
+                # Bundled values are localization hints, never an upstream fallback.
+                continue
             localization_result = await session.execute(
                 select(FoxholeItemLocalization).where(
                     FoxholeItemLocalization.guild_id == guild_id,
@@ -132,10 +140,14 @@ class ItemCatalogService:
             localization = localization_result.scalar_one_or_none()
             if localization is None:
                 localization = FoxholeItemLocalization(
-                    guild_id=guild_id, item_id=item.id, ru_name=data["ru_name"]
+                    guild_id=guild_id, item_id=item.id, ru_name=data["ru_name"],
+                    translation_status="translated",
                 )
                 session.add(localization)
                 await session.flush()
+            elif not localization.ru_name or localization.translation_status == "missing":
+                localization.ru_name = data["ru_name"]
+                localization.translation_status = "translated"
             existing_result = await session.execute(
                 select(FoxholeItemAlias.normalized_alias).where(
                     FoxholeItemAlias.localization_id == localization.id
@@ -157,22 +169,28 @@ class ItemCatalogService:
         await ItemCatalogService.ensure_seed(session, guild_id)
         result = await session.execute(
             select(FoxholeItemLocalization)
-            .where(FoxholeItemLocalization.guild_id == guild_id)
+            .join(FoxholeItem)
+            .where(
+                FoxholeItemLocalization.guild_id == guild_id,
+                FoxholeItem.is_active == True,
+            )
             .options(
                 selectinload(FoxholeItemLocalization.item),
                 selectinload(FoxholeItemLocalization.aliases),
+                selectinload(FoxholeItemLocalization.item).selectinload(FoxholeItem.production_recipes),
             )
-            .order_by(FoxholeItemLocalization.ru_name)
+            .order_by(func.coalesce(FoxholeItemLocalization.ru_name, FoxholeItem.api_name))
         )
         catalog: list[CatalogItem] = []
         for localization in result.scalars().all():
             item = localization.item
             overrides = localization.overrides or {}
+            recipes = {recipe.production_method: recipe for recipe in item.production_recipes}
             catalog.append(CatalogItem(
                 id=item.id,
                 api_id=item.api_id,
                 api_name=item.api_name,
-                ru_name=localization.ru_name,
+                ru_name=localization.ru_name or item.api_name,
                 aliases=[alias.alias for alias in localization.aliases],
                 category=overrides.get("category", item.category),
                 is_vehicle=(
@@ -184,8 +202,15 @@ class ItemCatalogService:
                 vehicle_crate_size=int(overrides.get("vehicle_crate_size", item.vehicle_crate_size)),
                 factory_site=overrides.get("factory_site", item.factory_site),
                 factory_cost=overrides.get("factory_cost", item.factory_cost or {}),
+                mpf_base_cost=overrides.get(
+                    "mpf_base_cost",
+                    (recipes.get("mpf").materials if recipes.get("mpf") else {}),
+                ),
                 mpf_available=bool(overrides.get("mpf_available", item.mpf_available)),
                 mpf_max_crates=int(overrides.get("mpf_max_crates", item.mpf_max_crates)),
+                source=item.source,
+                source_version=item.source_version,
+                synced_at=item.synced_at,
                 overrides=overrides,
             ))
         return catalog
@@ -195,70 +220,8 @@ class ItemCatalogService:
         session: AsyncSession,
         guild_id: int,
         client: FoxholeAPIClient | None = None,
-    ) -> int:
-        raw_items = await (client or FoxholeAPIClient()).fetch_items()
-        count = 0
-        for raw in raw_items:
-            data = ItemCatalogService._mapped_api_item(raw)
-            if data is None:
-                continue
-            result = await session.execute(select(FoxholeItem).where(FoxholeItem.api_id == data["api_id"]))
-            item = result.scalar_one_or_none()
-            if item is None:
-                result = await session.execute(
-                    select(FoxholeItem).where(
-                        func.lower(FoxholeItem.api_name) == data["api_name"].casefold()
-                    )
-                )
-                item = result.scalar_one_or_none()
-            if item is None:
-                item = FoxholeItem(**data)
-                session.add(item)
-            else:
-                for field, value in data.items():
-                    setattr(item, field, value)
-                item.synced_at = datetime.datetime.utcnow()
-            await session.flush()
-
-            localization_result = await session.execute(
-                select(FoxholeItemLocalization).where(
-                    FoxholeItemLocalization.guild_id == guild_id,
-                    FoxholeItemLocalization.item_id == item.id,
-                )
-            )
-            localization = localization_result.scalar_one_or_none()
-            if localization is None:
-                ru_name = raw.get("ru_name") or raw.get("ruName") or item.api_name
-                localization = FoxholeItemLocalization(
-                    guild_id=guild_id,
-                    item_id=item.id,
-                    ru_name=str(ru_name)[:200],
-                )
-                session.add(localization)
-                await session.flush()
-            aliases = raw.get("aliases") or []
-            if isinstance(aliases, str):
-                aliases = [part.strip() for part in aliases.split(",")]
-            if isinstance(aliases, list):
-                existing_result = await session.execute(
-                    select(FoxholeItemAlias.normalized_alias).where(
-                        FoxholeItemAlias.localization_id == localization.id
-                    )
-                )
-                existing = set(existing_result.scalars().all())
-                for alias in aliases:
-                    normalized = TextNormalizer.normalize(str(alias))
-                    if normalized and normalized not in existing:
-                        session.add(FoxholeItemAlias(
-                            localization_id=localization.id,
-                            alias=str(alias)[:200],
-                            normalized_alias=normalized[:200],
-                        ))
-                        existing.add(normalized)
-            count += 1
-        await session.flush()
-        logger.info("Foxhole catalog synchronized: %d items", count)
-        return count
+    ) -> ItemSyncResult:
+        return await ItemSyncService.sync(session, guild_id, provider=client)
 
     @staticmethod
     async def search(session: AsyncSession, guild_id: int, query: str, limit: int = 20) -> list[FoxholeItemLocalization]:

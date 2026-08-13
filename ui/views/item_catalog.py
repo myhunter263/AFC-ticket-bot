@@ -60,7 +60,10 @@ class ItemCatalogView(discord.ui.View):
         await interaction.response.defer(ephemeral=True)
         try:
             async with async_session_maker() as session:
-                count = await ItemCatalogService.sync(session, self.guild_id)
+                result = await ItemCatalogService.sync(session, self.guild_id)
+                if not result.success:
+                    await session.commit()
+                    raise FoxholeAPIError(result.error or "Неизвестная ошибка синхронизации")
                 await ItemCatalogService.ensure_seed(session, self.guild_id)
                 await AuditService.log(
                     session,
@@ -68,7 +71,7 @@ class ItemCatalogView(discord.ui.View):
                     user_id=interaction.user.id,
                     user_name=str(interaction.user),
                     action="refresh_foxhole_catalog",
-                    details={"items": count},
+                    details={"items": result.item_count, "recipes": result.recipe_count},
                 )
                 await session.commit()
         except FoxholeAPIError as exc:
@@ -81,7 +84,11 @@ class ItemCatalogView(discord.ui.View):
             )
             return
         await interaction.edit_original_response(
-            embed=EmbedBuilder.success("Каталог обновлён", f"Получено предметов: **{count}**."),
+            embed=EmbedBuilder.success(
+                "Каталог FoxholeHQ обновлён",
+                f"Предметов: **{result.item_count}**, рецептов: **{result.recipe_count}**. "
+                f"Без перевода: **{result.untranslated}**.",
+            ),
             view=self,
         )
 

@@ -163,18 +163,19 @@ docker compose logs --tail=100 bot
 
 ### Перед первым обновлением с каталогом Foxhole
 
-Версия с распознаванием заказов добавляет миграцию `003`. Перед деплоем один раз
+Версия с FoxholeHQ добавляет миграцию `004`. Перед деплоем один раз
 создайте дамп текущей БД:
 
 ```bash
 mkdir -p /opt/backups
 cd /opt/AFC-ticket-bot/discord-ticket-bot
 docker compose exec -T db pg_dump -U ticketbot ticketbot \
-  > /opt/backups/before_foxhole_catalog_$(date +%Y%m%d_%H%M%S).sql
+  > /opt/backups/before_foxholehq_$(date +%Y%m%d_%H%M%S).sql
 ```
 
-Миграция применяется ботом автоматически при старте. Она только добавляет новые
-таблицы каталога и заказов, существующие тикеты и баллы не удаляются.
+Миграция применяется ботом автоматически при старте. Она добавляет метаданные
+FoxholeHQ, рецепты и состояние синхронизации; существующие тикеты, snapshots,
+русские названия, алиасы и баллы не удаляются.
 
 ```bash
 # Перейти в корень репозитория
@@ -204,7 +205,12 @@ docker compose logs --tail=100 bot | grep -E "Running upgrade|Database initializ
 docker compose exec -T db psql -U ticketbot ticketbot -c "SELECT version_num FROM alembic_version;"
 ```
 
-Ожидаемая версия Alembic: `003`.
+Ожидаемая версия Alembic: `004`.
+
+После запуска выполните в Discord `/afc-items-refresh`, затем проверьте
+`/afc-foxhole-status`. Первая команда импортирует текущий FoxholeHQ dataset,
+вторая должна показать источник `FoxholeHQ`, версию, количество предметов и
+рецептов. `/afc-foxhole-untranslated` покажет новые позиции для перевода.
 
 > **Важно:** `docker compose up -d --no-deps bot` перезапускает только бота.
 > PostgreSQL и все данные остаются нетронутыми.

@@ -118,10 +118,20 @@ class OrderPreviewService:
                 "confidence": row.resolved.confidence,
                 "matched_by": row.resolved.matched_by,
                 "cost_snapshot": {
+                    "item_display_name": row.resolved.item.ru_name,
                     "factory": row.factory_cost,
                     "factory_site": row.resolved.item.factory_site,
                     "mpf": row.mpf_cost,
                     "mpf_crates": row.mpf_crates,
+                    "crate_size": row.resolved.item.crate_size,
+                    "vehicle_crate_size": row.resolved.item.vehicle_crate_size,
+                    "source": row.resolved.item.source,
+                    "data_version": row.resolved.item.source_version,
+                    "synced_at": (
+                        row.resolved.item.synced_at.isoformat()
+                        if hasattr(row.resolved.item.synced_at, "isoformat")
+                        else row.resolved.item.synced_at
+                    ),
                 },
             }
             for row in order.items

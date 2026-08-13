@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import datetime
 import logging
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from database.session import async_session_maker
+from config import config
 from services.ticket_service import TicketService
 from services.audit_service import AuditService
 from services.foxhole_api import FoxholeAPIError
 from services.item_catalog_service import ItemCatalogService
+from services.item_sync_service import ItemSyncService
 from ui.views.admin_panel import AdminPanelView
 from utils.embeds import EmbedBuilder
 from utils.permissions import PermissionChecker
@@ -21,6 +24,45 @@ logger = logging.getLogger(__name__)
 class AdminCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
+        self.foxhole_auto_sync.change_interval(
+            hours=max(1, config.FOXHOLEHQ_SYNC_INTERVAL_HOURS)
+        )
+        self.foxhole_auto_sync.start()
+
+    async def cog_unload(self) -> None:
+        self.foxhole_auto_sync.cancel()
+
+    @tasks.loop(hours=24)
+    async def foxhole_auto_sync(self) -> None:
+        for guild in self.bot.guilds:
+            try:
+                async with async_session_maker() as session:
+                    status = await ItemSyncService.status(session, guild.id)
+                    last_attempt = status["last_attempt_at"]
+                    due_after = datetime.timedelta(
+                        hours=max(1, config.FOXHOLEHQ_SYNC_INTERVAL_HOURS)
+                    )
+                    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+                    if last_attempt and now - last_attempt < due_after:
+                        await ItemSyncService.ensure_localizations(session, guild.id)
+                        await ItemCatalogService.ensure_seed(session, guild.id)
+                        await session.commit()
+                        continue
+                    result = await ItemSyncService.sync(session, guild.id)
+                    await ItemCatalogService.ensure_seed(session, guild.id)
+                    await session.commit()
+                if not result.success:
+                    logger.warning(
+                        "Automatic FoxholeHQ sync failed for guild %d: %s",
+                        guild.id,
+                        result.error,
+                    )
+            except Exception:
+                logger.exception("Automatic FoxholeHQ sync crashed for guild %d", guild.id)
+
+    @foxhole_auto_sync.before_loop
+    async def before_foxhole_auto_sync(self) -> None:
+        await self.bot.wait_until_ready()
 
     @app_commands.command(name="afc-admin", description="[AFC] Открыть панель управления ботом")
     @app_commands.guild_only()
@@ -115,7 +157,10 @@ class AdminCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         try:
             async with async_session_maker() as session:
-                count = await ItemCatalogService.sync(session, interaction.guild_id)
+                result = await ItemCatalogService.sync(session, interaction.guild_id)
+                if not result.success:
+                    await session.commit()
+                    raise FoxholeAPIError(result.error or "Неизвестная ошибка синхронизации")
                 await ItemCatalogService.ensure_seed(session, interaction.guild_id)
                 await AuditService.log(
                     session,
@@ -123,7 +168,12 @@ class AdminCog(commands.Cog):
                     user_id=interaction.user.id,
                     user_name=str(interaction.user),
                     action="refresh_foxhole_catalog",
-                    details={"items": count},
+                    details={
+                        "items": result.item_count,
+                        "recipes": result.recipe_count,
+                        "changed": result.changed,
+                        "version": result.source_version,
+                    },
                 )
                 await session.commit()
         except FoxholeAPIError as exc:
@@ -136,7 +186,81 @@ class AdminCog(commands.Cog):
             )
             return
         await interaction.followup.send(
-            embed=EmbedBuilder.success("Каталог обновлён", f"Синхронизировано предметов: **{count}**."),
+            embed=EmbedBuilder.success(
+                "Каталог FoxholeHQ обновлён",
+                (
+                    f"Версия: **{result.source_version or 'не указана'}**\n"
+                    f"Предметов: **{result.item_count}**, рецептов: **{result.recipe_count}**\n"
+                    f"Новых: **{result.created}**, переименовано: **{result.renamed}**, "
+                    f"деактивировано: **{result.deactivated}**\n"
+                    f"Без русского названия: **{result.untranslated}**\n"
+                    f"Изменения dataset: **{'да' if result.changed else 'нет'}**"
+                ),
+            ),
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="afc-foxhole-status", description="[AFC] Состояние данных FoxholeHQ")
+    @app_commands.guild_only()
+    async def foxhole_status(self, interaction: discord.Interaction) -> None:
+        if not await self._require_admin(interaction):
+            return
+        async with async_session_maker() as session:
+            status = await ItemSyncService.status(session, interaction.guild_id)
+            await session.commit()
+        success_at = status["last_success_at"].strftime("%d.%m.%Y %H:%M UTC") if status["last_success_at"] else "ещё не было"
+        error = status["last_error"] or "нет"
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="Foxhole data status",
+                description=(
+                    f"Источник: **FoxholeHQ**\n"
+                    f"Версия: **{status['source_version'] or 'не загружена'}**\n"
+                    f"Последняя успешная синхронизация: **{success_at}**\n"
+                    f"Предметов: **{status['item_count']}**\n"
+                    f"Рецептов: **{status['recipe_count']}**\n"
+                    f"Без русского названия: **{status['untranslated']}**\n"
+                    f"Последняя ошибка: {error[:800]}"
+                ),
+                color=0x5865F2,
+            ),
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="afc-foxhole-untranslated",
+        description="[AFC] Показать предметы FoxholeHQ без русского названия",
+    )
+    @app_commands.guild_only()
+    async def foxhole_untranslated(self, interaction: discord.Interaction) -> None:
+        if not await self._require_admin(interaction):
+            return
+        from database.models import FoxholeItem, FoxholeItemLocalization
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+
+        async with async_session_maker() as session:
+            rows = list((await session.execute(
+                select(FoxholeItemLocalization)
+                .join(FoxholeItem)
+                .where(
+                    FoxholeItemLocalization.guild_id == interaction.guild_id,
+                    FoxholeItem.is_active == True,
+                    FoxholeItemLocalization.translation_status == "missing",
+                )
+                .options(selectinload(FoxholeItemLocalization.item))
+                .order_by(FoxholeItem.api_name)
+                .limit(25)
+            )).scalars().all())
+        description = "\n".join(
+            f"`{row.item_id}` {row.item.api_name}" for row in rows
+        ) or "Все активные предметы переведены."
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title=f"Без русского названия: {len(rows)} показано",
+                description=description[:4000],
+                color=0xFEE75C,
+            ),
             ephemeral=True,
         )
 
@@ -254,6 +378,7 @@ class AdminCog(commands.Cog):
                 return
             old_name = localization.ru_name
             localization.ru_name = ru_name[:200]
+            localization.translation_status = "translated"
             await AuditService.log(
                 session,
                 guild_id=interaction.guild_id,
@@ -365,7 +490,7 @@ class AdminCog(commands.Cog):
         await interaction.response.send_message(
             embed=EmbedBuilder.success(
                 "Параметры сохранены",
-                f"Ручные параметры **{item_name}** имеют приоритет над API.",
+                f"Ручные параметры **{item_name}** имеют приоритет над FoxholeHQ.",
             ),
             ephemeral=True,
         )

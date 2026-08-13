@@ -17,8 +17,12 @@ class CatalogItem:
     vehicle_crate_size: int = 3
     factory_site: str | None = None
     factory_cost: dict[str, int] = field(default_factory=dict)
+    mpf_base_cost: dict[str, int] = field(default_factory=dict)
     mpf_available: bool = False
     mpf_max_crates: int = 9
+    source: str = "bundled"
+    source_version: str | None = None
+    synced_at: Any = None
     overrides: dict[str, Any] = field(default_factory=dict)
 
 

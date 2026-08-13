@@ -29,7 +29,11 @@ class Config:
     BOT_PREFIX: str = os.getenv("BOT_PREFIX", "!")
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     MAX_TICKETS_PER_USER: int = int(os.getenv("MAX_TICKETS_PER_USER", "5"))
-    FOXHOLE_ITEM_API_URL: str = os.getenv("FOXHOLE_ITEM_API_URL", "").strip()
+    FOXHOLEHQ_BASE_URL: str = os.getenv("FOXHOLEHQ_BASE_URL", "https://foxholehq.com").rstrip("/")
+    FOXHOLEHQ_SYNC_INTERVAL_HOURS: int = int(
+        os.getenv("FOXHOLEHQ_SYNC_INTERVAL_HOURS", "24")
+    )
+    FOXHOLEHQ_MIN_ITEMS: int = int(os.getenv("FOXHOLEHQ_MIN_ITEMS", "100"))
     FOXHOLE_RESOLVE_AUTO_THRESHOLD: int = int(
         os.getenv("FOXHOLE_RESOLVE_AUTO_THRESHOLD", "90")
     )

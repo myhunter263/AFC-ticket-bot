@@ -24,17 +24,20 @@ class MPFCostCalculator:
         # Foxhole rounds each crate's discounted price down independently.
         return sum(
             math.floor(base_per_crate * (1 - min(0.1 * index, 0.5)))
-            for index in range(1, crates + 1)
+            for index in range(crates)
         )
 
     def reference_cost(self, item: CatalogItem) -> tuple[dict[str, int], int]:
         if not item.mpf_available:
             return {}, 0
         crates = max(3, item.mpf_max_crates)
-        crate_multiplier = item.vehicle_crate_size if item.is_vehicle else 1
-        result = {
-            resource: self._discounted_total(amount * crate_multiplier, crates)
+        base_cost = item.mpf_base_cost or {
+            resource: amount * (item.vehicle_crate_size if item.is_vehicle else 1)
             for resource, amount in _positive_cost(item.factory_cost).items()
+        }
+        result = {
+            resource: self._discounted_total(amount, crates)
+            for resource, amount in _positive_cost(base_cost).items()
         }
         return result, crates
 
