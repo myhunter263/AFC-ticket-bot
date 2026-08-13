@@ -398,6 +398,8 @@ class AdminCog(commands.Cog):
         description = (
             f"**Item:** {data['name']} (`{data['api_name']}`)\n"
             f"**FoxholeHQ ID:** `{data['api_id']}`\n\n"
+            f"**Production group:** `{resolved.item.production_group.upper()}`\n"
+            f"**Order unit:** `{'EACH' if resolved.item.is_equipment else 'CRATE'}`\n\n"
             f"**{resolved.item.factory_site or 'Factory'}:** `{standard.get('materials') or resolved.item.factory_cost}`\n"
             f"Output: `{standard.get('output_quantity', 1)} {standard.get('output_unit', 'unknown')}`\n\n"
             f"**MPF:** `{mpf.get('materials') or 'недоступно'}`\n"
@@ -633,7 +635,8 @@ class AdminCog(commands.Cog):
     @app_commands.describe(
         item_id="ID из /afc-item-search",
         category="Категория предмета",
-        is_vehicle="Техника заказывается поштучно",
+        is_vehicle="Физически является транспортным средством",
+        production_group="AUTO, ITEM или EQUIPMENT (единица заказа и MPF-очередь)",
         factory_site="Factory, Garage или другое здание",
         factory_cost="Ресурсы: bmat=100,rmat=20",
         crate_size="Количество предметов в обычном ящике",
@@ -648,6 +651,7 @@ class AdminCog(commands.Cog):
         item_id: int,
         category: str | None = None,
         is_vehicle: bool | None = None,
+        production_group: str | None = None,
         factory_site: str | None = None,
         factory_cost: str | None = None,
         crate_size: app_commands.Range[int, 1, 10000] | None = None,
@@ -688,18 +692,26 @@ class AdminCog(commands.Cog):
                     embed=EmbedBuilder.error("Предмет не найден"), ephemeral=True
                 )
                 return
-            await ItemCatalogService.update_overrides(
-                session,
-                localization,
-                category=category.strip() if category else None,
-                is_vehicle=is_vehicle,
-                factory_site=factory_site.strip() if factory_site else None,
-                factory_cost=parsed_cost,
-                crate_size=crate_size,
-                vehicle_crate_size=vehicle_crate_size,
-                mpf_available=mpf_available,
-                mpf_max_crates=mpf_max_crates,
-            )
+            try:
+                await ItemCatalogService.update_overrides(
+                    session,
+                    localization,
+                    category=category.strip() if category else None,
+                    is_vehicle=is_vehicle,
+                    production_group=production_group,
+                    factory_site=factory_site.strip() if factory_site else None,
+                    factory_cost=parsed_cost,
+                    crate_size=crate_size,
+                    vehicle_crate_size=vehicle_crate_size,
+                    mpf_available=mpf_available,
+                    mpf_max_crates=mpf_max_crates,
+                )
+            except ValueError as exc:
+                await interaction.response.send_message(
+                    embed=EmbedBuilder.error("Неверный производственный класс", str(exc)),
+                    ephemeral=True,
+                )
+                return
             await AuditService.log(
                 session,
                 guild_id=interaction.guild_id,
@@ -711,6 +723,7 @@ class AdminCog(commands.Cog):
                 details={
                     "category": category,
                     "is_vehicle": is_vehicle,
+                    "production_group": production_group,
                     "factory_site": factory_site,
                     "factory_cost": parsed_cost,
                     "crate_size": crate_size,

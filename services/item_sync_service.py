@@ -132,7 +132,7 @@ class ItemSyncService:
                 if data.get("source_updated_at") else None
             )
             for field in (
-                "api_id", "api_name", "category", "faction", "is_vehicle", "crate_size",
+                "api_id", "api_name", "category", "faction", "is_vehicle", "production_group", "crate_size",
                 "amount_produced", "vehicle_crate_size", "factory_site", "factory_cost",
                 "mpf_available", "mpf_max_crates", "source", "source_version",
                 "upstream_fingerprint", "raw_data",
@@ -231,6 +231,7 @@ class ItemSyncService:
             item.api_name = names[key]
             item.category = "resource"
             item.is_vehicle = False
+            item.production_group = "item"
             item.crate_size = crate_size
             item.amount_produced = crate_size
             item.vehicle_crate_size = 1

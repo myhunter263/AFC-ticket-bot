@@ -113,7 +113,7 @@
   {"api_id":"foxholehq:sandbagsmaterial","api_name":"Sandbag","ru_name":"Мешки с песком","alias_type":"translation","priority":110,"aliases":["мешки с песком","мешки","сэндбеги","sandbags"]},
   {"api_id":"foxholehq:barbedwirematerial","api_name":"Barbed Wire","ru_name":"Колючая проволока","alias_type":"translation","priority":110,"aliases":["колючая проволока","колючка","барбвайр","barbed wire"]},
   {"api_id":"foxholehq:metalbeammaterial","api_name":"Metal Beam","ru_name":"Металлические балки","alias_type":"translation","priority":105,"aliases":["металлические балки","метал балки","балки","metal beam"]},
-  {"api_id":"foxholehq:shippingcontainer","api_name":"Shipping Container","ru_name":"Транспортный контейнер","alias_type":"translation","priority":105,"aliases":["транспортный контейнер","шиппинг контейнер","shipping container"]},
+  {"api_id":"foxholehq:shippingcontainer","api_name":"Shipping Container","ru_name":"Транспортный контейнер","alias_type":"translation","priority":110,"aliases":["контейнер","контейнеры","контейнеров","транспортный контейнер","шиппинг контейнер","shipping container"]},
   {"api_id":"foxholehq:resourcecontainer","api_name":"Resource Container","ru_name":"Ресурсный контейнер","alias_type":"translation","priority":105,"aliases":["ресурсный контейнер","рес контейнер","resource container"]},
   {"api_id":"foxholehq:materialpallet","api_name":"Material Pallet","ru_name":"Палета материалов","alias_type":"translation","priority":105,"aliases":["палета","паллет","палета материалов","material pallet"]},
   {"api_id":"foxholehq:fuelcontainer","api_name":"Liquid Container","ru_name":"Жидкостный контейнер","alias_type":"translation","priority":105,"aliases":["жидкостный контейнер","жидкостный танк","ликвид контейнер","liquid container"]},
@@ -121,5 +121,6 @@
   {"api_id":"foxholehq:waterbucket","api_name":"Water Bucket","ru_name":"Ведро воды","alias_type":"translation","priority":105,"aliases":["ведро","ведро воды","water bucket"]},
   {"api_id":"foxholehq:whiteash","api_name":"BF5 White Ash Flask Grenade","ru_name":"Белый пепел","alias_type":"slang","priority":110,"aliases":["белый пепел","фляга","фласка","white ash"]},
   {"api_id":"foxholehq:havoccharge","api_name":"Havoc Charge","ru_name":"Хавок","alias_type":"slang","priority":110,"aliases":["хавок","хавок заряд","havoc","havoc charge"]},
-  {"api_id":"foxholehq:alligatorcharge","api_name":"Alligator Charge","ru_name":"Аллигатор","alias_type":"slang","priority":105,"aliases":["аллигатор","аллигатор заряд","alligator charge"]}
+  {"api_id":"foxholehq:alligatorcharge","api_name":"Alligator Charge","ru_name":"Аллигатор","alias_type":"slang","priority":105,"aliases":["аллигатор","аллигатор заряд","alligator charge"]},
+  {"api_id":"foxholehq:lariat","api_name":"Huber Lariat 120mm","ru_name":"120-мм орудие Лариат","alias_type":"slang","priority":115,"aliases":["120 пушка","120 пушки","120 пушек","120 орудие","120 орудия","лари ат","лариат","lariat"]}
 ]

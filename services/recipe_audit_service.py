@@ -65,6 +65,18 @@ class RecipeAuditService:
                 if int((row.get("raw_data") or {}).get("vehicles_per_crate") or 0) <= 0:
                     report.mpf_anomalies += 1
                     report.errors.append(f"{item['api_name']}: не указан размер ящика техники")
+            if item.get("production_group") == "equipment":
+                if int(item.get("mpf_max_crates") or 0) != 5:
+                    report.mpf_anomalies += 1
+                    report.errors.append(f"{item['api_name']}: EQUIPMENT MPF-очередь не равна 5")
+                if not item["is_vehicle"] and standard:
+                    if standard[0]["output_unit"] != "equipment":
+                        report.factory_anomalies += 1
+                        report.errors.append(f"{item['api_name']}: неверная единица EQUIPMENT")
+                if not item["is_vehicle"] and mpf:
+                    if mpf[0]["output_unit"] != "equipment_crate":
+                        report.mpf_anomalies += 1
+                        report.errors.append(f"{item['api_name']}: неверная MPF-единица EQUIPMENT")
         return report
 
     @classmethod
@@ -80,7 +92,9 @@ class RecipeAuditService:
                 report.errors.append(f"{recipe.get('api_id')}: неизвестный ресурс {resource}")
             if not isinstance(amount, int) or amount <= 0:
                 report.errors.append(f"{recipe.get('api_id')}: неверная цена {resource}={amount}")
-        if method == "mpf" and recipe.get("output_unit") not in {"crate", "vehicle_crate"}:
+        if method == "mpf" and recipe.get("output_unit") not in {
+            "crate", "vehicle_crate", "equipment_crate"
+        }:
             report.mpf_anomalies += 1
 
     @classmethod
@@ -101,7 +115,9 @@ class RecipeAuditService:
                 "api_id": item.api_id,
                 "api_name": item.api_name,
                 "is_vehicle": item.is_vehicle,
+                "production_group": item.production_group,
                 "mpf_available": item.mpf_available,
+                "mpf_max_crates": item.mpf_max_crates,
             } for item in items if item.source == "foxholehq"],
             recipes=[{
                 "api_id": item.api_id,

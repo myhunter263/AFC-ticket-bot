@@ -19,9 +19,15 @@ def calculate_required_resource_crates(
 
 
 class ResourceCostFormatter:
-    def __init__(self, crate_sizes: dict[str, int], display: str = "both") -> None:
+    def __init__(
+        self,
+        crate_sizes: dict[str, int],
+        display: str = "both",
+        compact: bool = False,
+    ) -> None:
         self.crate_sizes = crate_sizes
         self.display = display if display in {"raw", "crate", "both"} else "both"
+        self.compact = compact
 
     @staticmethod
     def _crate_word(count: int) -> str:
@@ -42,7 +48,8 @@ class ResourceCostFormatter:
         if self.display == "raw" or not crate_size:
             return raw
         crates = calculate_required_resource_crates(amount, crate_size)
-        crated = f"{crates} {self._crate_word(crates)} {label}"
+        crate_word = "ящ" if self.compact else self._crate_word(crates)
+        crated = f"{crates} {crate_word} {label}"
         if self.display == "crate":
             return crated
         return f"{raw} или {crated}"
@@ -50,6 +57,16 @@ class ResourceCostFormatter:
     def materials(self, materials: dict[str, int] | None) -> str:
         if not materials:
             return "недоступно"
+        if self.compact and self.display == "both":
+            raw = " + ".join(
+                f"{amount:,} {config.FOXHOLE_RESOURCE_LABELS.get(resource, resource.upper())}".replace(",", " ")
+                for resource, amount in materials.items()
+            )
+            crated = " + ".join(
+                self.resource(resource, amount).split(" или ")[-1]
+                for resource, amount in materials.items()
+            )
+            return f"{raw} или {crated}"
         return " + ".join(
             self.resource(resource, amount) for resource, amount in materials.items()
         )

@@ -77,7 +77,7 @@ class OrderPreviewService:
             )
         return OrderItem(
             quantity=quantity,
-            unit="item" if item.is_vehicle else "crate",
+            unit="item" if item.is_equipment else "crate",
             query=query,
             resolved=resolved,
             factory_cost=self.production.reference_cost(item),

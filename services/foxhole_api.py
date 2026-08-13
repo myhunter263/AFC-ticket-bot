@@ -211,6 +211,9 @@ class FoxholeHQDataProvider(FoxholeDataProvider):
             produced_at = cls._text(cls._PRODUCED_AT, tooltip)
             methods = [value.strip() for value in produced_at.split(",") if value.strip()]
             is_vehicle = category == "vehicles"
+            production_group = (
+                "equipment" if category in cls._MPF_ONLY_CATEGORIES else "item"
+            )
             mpf_available = category in cls._MPF_ONLY_CATEGORIES or any(
                 "mass production factory" in method.casefold() for method in methods
             )
@@ -250,6 +253,7 @@ class FoxholeHQDataProvider(FoxholeDataProvider):
                 "category": category,
                 "faction": faction,
                 "is_vehicle": is_vehicle,
+                "production_group": production_group,
                 "crate_size": crate_size,
                 "amount_produced": crate_size,
                 "vehicle_crate_size": crate_size if is_vehicle else 1,
@@ -257,7 +261,7 @@ class FoxholeHQDataProvider(FoxholeDataProvider):
                 "factory_cost": factory_cost,
                 "mpf_base_cost": cost if mpf_available else {},
                 "mpf_available": mpf_available,
-                "mpf_max_crates": 5 if is_vehicle else 9,
+                "mpf_max_crates": 5 if production_group == "equipment" else 9,
                 "source": cls.SOURCE,
                 "source_version": version,
                 "source_updated_at": updated_at.isoformat() if updated_at else None,
@@ -269,7 +273,11 @@ class FoxholeHQDataProvider(FoxholeDataProvider):
                 "api_id": item["api_id"],
                 "production_method": standard_method.casefold().replace(" ", "_"),
                 "output_quantity": 1,
-                "output_unit": "vehicle" if is_vehicle else "crate",
+                "output_unit": (
+                    "vehicle" if is_vehicle
+                    else "equipment" if production_group == "equipment"
+                    else "crate"
+                ),
                 "materials": factory_cost,
                 "raw_data": {
                     **raw_data,
@@ -287,7 +295,11 @@ class FoxholeHQDataProvider(FoxholeDataProvider):
                     "api_id": item["api_id"],
                     "production_method": "mpf",
                     "output_quantity": 1,
-                    "output_unit": "vehicle_crate" if is_vehicle else "crate",
+                    "output_unit": (
+                        "vehicle_crate" if is_vehicle
+                        else "equipment_crate" if production_group == "equipment"
+                        else "crate"
+                    ),
                     "materials": cost,
                     "raw_data": {
                         **raw_data,

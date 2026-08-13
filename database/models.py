@@ -317,6 +317,7 @@ class FoxholeItem(Base):
     category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     faction: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     is_vehicle: Mapped[bool] = mapped_column(Boolean, default=False)
+    production_group: Mapped[str] = mapped_column(String(20), default="item")
     crate_size: Mapped[int] = mapped_column(Integer, default=1)
     amount_produced: Mapped[int] = mapped_column(Integer, default=1)
     vehicle_crate_size: Mapped[int] = mapped_column(Integer, default=3)
@@ -350,6 +351,7 @@ class FoxholeItemLocalization(Base):
     ru_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     translation_status: Mapped[str] = mapped_column(String(20), default="missing")
     is_vehicle_override: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    production_group_override: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     overrides: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()

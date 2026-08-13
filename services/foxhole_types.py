@@ -14,6 +14,7 @@ class CatalogItem:
     alias_metadata: dict[str, dict[str, Any]] = field(default_factory=dict)
     category: str | None = None
     is_vehicle: bool = False
+    production_group: str = "auto"
     crate_size: int = 1
     vehicle_crate_size: int = 3
     factory_site: str | None = None
@@ -27,6 +28,12 @@ class CatalogItem:
     overrides: dict[str, Any] = field(default_factory=dict)
     resource_crate_sizes: dict[str, int] = field(default_factory=dict)
     recipe_details: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    @property
+    def is_equipment(self) -> bool:
+        return self.production_group == "equipment" or (
+            self.production_group == "auto" and self.is_vehicle
+        )
 
 
 @dataclass(slots=True)

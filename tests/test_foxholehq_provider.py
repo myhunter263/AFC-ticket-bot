@@ -114,6 +114,34 @@ def test_provider_normalizes_vehicle_factory_and_mpf_costs():
     assert mpf["raw_data"]["vehicles_per_crate"] == 3
 
 
+def test_provider_classifies_structures_as_equipment_with_five_mpf_queues():
+    dataset = FoxholeHQDataProvider(
+        base_url="https://example.test", min_items=2
+    ).parse_page(
+        _page(
+            _item(
+                "shippingcontainer", "Shipping Container", category="structures",
+                crate_size=1, material="bmats", cost=300, methods="Construction Yard",
+                ),
+                _item("argenti", "Argenti", category="small-arms"),
+                _item("truck", "Truck", category="vehicles", crate_size=3),
+            ),
+        _SCRIPT,
+    )
+    container = next(
+        item for item in dataset.items if item["upstream_key"] == "shippingcontainer"
+    )
+    recipes = [
+        recipe for recipe in dataset.recipes if recipe["api_id"] == container["api_id"]
+    ]
+    assert container["is_vehicle"] is False
+    assert container["production_group"] == "equipment"
+    assert container["mpf_max_crates"] == 5
+    assert {recipe["output_unit"] for recipe in recipes} == {
+        "equipment", "equipment_crate",
+    }
+
+
 class StaticProvider:
     def __init__(self, items, recipes, dataset_hash="hash-1"):
         self.dataset = FoxholeDataset(

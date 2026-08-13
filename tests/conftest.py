@@ -31,6 +31,9 @@ def catalog() -> list[CatalogItem]:
                 for alias in data["aliases"]
             },
             is_vehicle=data["api_id"] in vehicle_ids,
+            production_group=(
+                "equipment" if data["api_id"] in vehicle_ids else "item"
+            ),
             crate_size=3 if data["api_id"] in vehicle_ids else 1,
             vehicle_crate_size=3 if data["api_id"] in vehicle_ids else 1,
             factory_site="Garage" if data["api_id"] in vehicle_ids else "Factory",

@@ -26,7 +26,10 @@ def _ticket():
     })()
 
 
-def _item(api_id, api_name, ru_name, aliases, base_cost, crates, is_vehicle=False):
+def _item(
+    api_id, api_name, ru_name, aliases, factory_cost, crates,
+    is_vehicle=False, mpf_base_cost=None, production_group=None,
+):
     return CatalogItem(
         id=1,
         api_id=api_id,
@@ -34,9 +37,10 @@ def _item(api_id, api_name, ru_name, aliases, base_cost, crates, is_vehicle=Fals
         ru_name=ru_name,
         aliases=aliases,
         is_vehicle=is_vehicle,
+        production_group=production_group or ("equipment" if is_vehicle else "item"),
         factory_site="Garage" if is_vehicle else "Factory",
-        factory_cost=base_cost,
-        mpf_base_cost=base_cost,
+        factory_cost=factory_cost,
+        mpf_base_cost=mpf_base_cost or factory_cost,
         mpf_available=True,
         mpf_max_crates=crates,
         vehicle_crate_size=3 if is_vehicle else 1,
@@ -73,11 +77,17 @@ def test_dusk_mpf_cost_survives_parser_snapshot_and_discord_embed():
 def test_xiphos_mpf_cost_survives_parser_snapshot_and_discord_embed():
     order_item, snapshot, rendered = _render_pipeline(
         "5 ксифосов",
-        _item("foxholehq:xiphos", 'T3 "Xiphos"', "Ксифос", ["ксифос", "ксифосов"], {"rmat": 75}, 5, True),
+        _item(
+            "foxholehq:xiphos", 'T3 "Xiphos"', "Ксифос",
+            ["ксифос", "ксифосов"], {"rmat": 25}, 5, True,
+            mpf_base_cost={"rmat": 75},
+        ),
     )
     assert order_item.quantity == 5
     assert order_item.unit == "item"
     assert order_item.mpf_cost == {"rmat": 261}
     assert snapshot["cost_snapshot"]["mpf"] == {"rmat": 261}
     assert "261 RMat" in rendered
+    assert "25 RMat или 2 ящ RMat за шт." in rendered
+    assert "261 RMat или 14 ящ RMat на MPF за 5 ящ" in rendered
     assert "264 RMat" not in rendered

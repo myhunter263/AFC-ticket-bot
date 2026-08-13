@@ -102,7 +102,7 @@ SEED_ITEMS = _load_seed_items()
 
 
 class ItemCatalogService:
-    SEED_VERSION = 3
+    SEED_VERSION = 4
 
     @staticmethod
     async def _upsert_seed_aliases(
@@ -178,17 +178,23 @@ class ItemCatalogService:
         is_vehicle = bool(raw.get("is_vehicle") or raw.get("isVehicle")) or any(
             marker in category_text for marker in ("vehicle", "tank", "truck")
         )
+        production_group = str(raw.get("production_group") or "").casefold()
+        if production_group not in {"item", "equipment"}:
+            production_group = "equipment" if (
+                is_vehicle or category_text in {"vehicles", "structures"}
+            ) else "item"
         return {
             "api_id": str(api_id),
             "api_name": str(api_name),
             "category": str(category) if category else None,
             "is_vehicle": is_vehicle,
+            "production_group": production_group,
             "crate_size": int(raw.get("numberProduced") or raw.get("amountProduced") or raw.get("crate_size") or 1),
             "vehicle_crate_size": int(raw.get("vehicle_crate_size") or 3),
             "factory_site": raw.get("factory_site") or ("Garage" if is_vehicle else "Factory"),
             "factory_cost": ItemCatalogService._cost(raw),
             "mpf_available": bool(raw.get("isMpfCraftable") or raw.get("isMfpCraftable") or raw.get("mpf_available")),
-            "mpf_max_crates": int(raw.get("mpf_max_crates") or (5 if is_vehicle else 9)),
+            "mpf_max_crates": int(raw.get("mpf_max_crates") or (5 if production_group == "equipment" else 9)),
             "raw_data": raw,
         }
 
@@ -331,6 +337,18 @@ class ItemCatalogService:
             item = localization.item
             overrides = localization.overrides or {}
             recipes = {recipe.production_method: recipe for recipe in item.production_recipes}
+            production_group = (
+                localization.production_group_override
+                or overrides.get("production_group")
+                or item.production_group
+            )
+            default_mpf_max = 5 if production_group == "equipment" else 9
+            mpf_max_crates = int(overrides.get(
+                "mpf_max_crates",
+                item.mpf_max_crates or default_mpf_max,
+            ))
+            if localization.production_group_override and "mpf_max_crates" not in overrides:
+                mpf_max_crates = default_mpf_max
             catalog.append(CatalogItem(
                 id=item.id,
                 api_id=item.api_id,
@@ -350,6 +368,7 @@ class ItemCatalogService:
                     if localization.is_vehicle_override is not None
                     else item.is_vehicle
                 ),
+                production_group=production_group,
                 crate_size=int(overrides.get("crate_size", item.crate_size)),
                 vehicle_crate_size=int(overrides.get("vehicle_crate_size", item.vehicle_crate_size)),
                 factory_site=overrides.get("factory_site", item.factory_site),
@@ -359,7 +378,7 @@ class ItemCatalogService:
                     (recipes.get("mpf").materials if recipes.get("mpf") else {}),
                 ),
                 mpf_available=bool(overrides.get("mpf_available", item.mpf_available)),
-                mpf_max_crates=int(overrides.get("mpf_max_crates", item.mpf_max_crates)),
+                mpf_max_crates=mpf_max_crates,
                 source=item.source,
                 source_version=item.source_version,
                 synced_at=item.synced_at,
@@ -587,5 +606,15 @@ class ItemCatalogService:
         if values.get("is_vehicle") is not None:
             localization.is_vehicle_override = bool(values["is_vehicle"])
             overrides.pop("is_vehicle", None)
+            localization.overrides = overrides or None
+        production_group = values.get("production_group")
+        if production_group is not None:
+            normalized_group = str(production_group).strip().casefold()
+            if normalized_group not in {"auto", "item", "equipment"}:
+                raise ValueError("production_group должен быть AUTO, ITEM или EQUIPMENT")
+            localization.production_group_override = (
+                None if normalized_group == "auto" else normalized_group
+            )
+            overrides.pop("production_group", None)
             localization.overrides = overrides or None
         await session.flush()
