@@ -264,7 +264,7 @@ async def _finish_ticket_creation(
     ping_role_ids: list,
     viewer_role_ids: list,
     order_items: list[dict] | None = None,
-) -> None:
+) -> bool:
     guild = interaction.guild
     user = interaction.user
 
@@ -306,79 +306,105 @@ async def _finish_ticket_creation(
             await interaction.followup.send(embed=embed, ephemeral=True)
         else:
             await interaction.response.send_message(embed=embed, ephemeral=True)
-        return
+        return False
 
-    async with async_session_maker() as session:
-        default_status = await StatusService.get_default(session, guild.id)
-        ticket = await TicketService.create_ticket(
-            session,
-            guild_id=guild.id,
-            panel_id=panel_id,
-            form_id=form_id,
-            channel_id=channel.id,
-            original_category_id=category.id if category else None,
-            author_id=user.id,
-            status_id=default_status.id if default_status else None,
-        )
-        if responses:
-            await TicketService.save_responses(session, ticket, responses)
-        if order_items:
-            await TicketService.save_order_items(session, ticket, order_items)
+    ticket_id: int | None = None
+    try:
+        async with async_session_maker() as session:
+            default_status = await StatusService.get_default(session, guild.id)
+            ticket = await TicketService.create_ticket(
+                session,
+                guild_id=guild.id,
+                panel_id=panel_id,
+                form_id=form_id,
+                channel_id=channel.id,
+                original_category_id=category.id if category else None,
+                author_id=user.id,
+                status_id=default_status.id if default_status else None,
+            )
+            if responses:
+                await TicketService.save_responses(session, ticket, responses)
+            if order_items:
+                await TicketService.save_order_items(session, ticket, order_items)
 
-        await AuditService.log(
-            session,
-            guild_id=guild.id,
-            user_id=user.id,
-            user_name=str(user),
-            action="create_ticket",
-            target_type="ticket",
-            target_id=ticket.id,
-        )
+            await AuditService.log(
+                session,
+                guild_id=guild.id,
+                user_id=user.id,
+                user_name=str(user),
+                action="create_ticket",
+                target_type="ticket",
+                target_id=ticket.id,
+            )
 
-        log_settings = await TicketService.get_log_settings(session, guild.id)
-        await session.commit()
-
-        ticket_number = ticket.number
-        ticket_id = ticket.id
-        status_name = default_status.name if default_status else "Новая"
-        status_color = default_status.color if default_status else config.COLOR_PRIMARY
-        status_emoji = default_status.emoji or ""
-
-    member = guild.get_member(user.id)
-    embed = EmbedBuilder.ticket_card(
-        ticket=type("T", (), {
-            "number": ticket_number, "id": ticket_id,
-            "created_at": __import__("datetime").datetime.utcnow(),
-            "closed_at": None, "assignee_id": None,
-        })(),
-        author=member or user,
-        assignees=[],
-        status_name=status_name,
-        status_color=status_color,
-        status_emoji=status_emoji,
-        responses=responses,
-        order_items=order_items or [],
-    )
-
-    view = TicketView(ticket_id=ticket_id, guild_id=guild.id)
-    ticket_msg = await channel.send(
-        content=user.mention,
-        embed=embed,
-        view=view,
-    )
-
-    async with async_session_maker() as session:
-        t = await TicketService.get_by_id(session, ticket_id)
-        if t:
-            t.message_id = ticket_msg.id
+            log_settings = await TicketService.get_log_settings(session, guild.id)
             await session.commit()
 
-    await channel.send(
-        embed=discord.Embed(
-            description=f"Заявка **#{ticket_number:04d}** создана. Ожидайте ответа.",
-            color=config.COLOR_INFO,
+            ticket_number = ticket.number
+            ticket_id = ticket.id
+            status_name = default_status.name if default_status else "Новая"
+            status_color = default_status.color if default_status else config.COLOR_PRIMARY
+            status_emoji = (default_status.emoji or "") if default_status else ""
+
+        member = guild.get_member(user.id)
+        embed = EmbedBuilder.ticket_card(
+            ticket=type("T", (), {
+                "number": ticket_number, "id": ticket_id,
+                "created_at": __import__("datetime").datetime.utcnow(),
+                "closed_at": None, "assignee_id": None,
+            })(),
+            author=member or user,
+            assignees=[],
+            status_name=status_name,
+            status_color=status_color,
+            status_emoji=status_emoji,
+            responses=responses,
+            order_items=order_items or [],
         )
-    )
+
+        ticket_view = TicketView(ticket_id=ticket_id, guild_id=guild.id)
+        ticket_message = await channel.send(
+            content=user.mention,
+            embed=embed,
+            view=ticket_view,
+        )
+
+        async with async_session_maker() as session:
+            saved_ticket = await TicketService.get_by_id(session, ticket_id)
+            if not saved_ticket:
+                raise RuntimeError(
+                    f"Ticket {ticket_id} disappeared before saving its message ID"
+                )
+            saved_ticket.message_id = ticket_message.id
+            await session.commit()
+    except Exception:
+        logger.exception(
+            "Ticket creation failed before the final message was persisted; cleaning up"
+        )
+        if ticket_id is not None:
+            try:
+                async with async_session_maker() as session:
+                    failed_ticket = await TicketService.get_by_id(session, ticket_id)
+                    if failed_ticket:
+                        await session.delete(failed_ticket)
+                        await session.commit()
+            except Exception:
+                logger.exception("Failed to remove incomplete ticket %d", ticket_id)
+        try:
+            await channel.delete(reason="Incomplete ticket creation rollback")
+        except discord.HTTPException:
+            logger.exception("Failed to remove incomplete ticket channel %d", channel.id)
+        raise
+
+    try:
+        await channel.send(
+            embed=discord.Embed(
+                description=f"Заявка **#{ticket_number:04d}** создана. Ожидайте ответа.",
+                color=config.COLOR_INFO,
+            )
+        )
+    except discord.HTTPException:
+        logger.warning("Failed to send the ticket-created notice for ticket %d", ticket_id)
 
     # Ping roles configured for this panel
     if ping_role_ids:
@@ -415,6 +441,8 @@ async def _finish_ticket_creation(
                 await log_ch.send(embed=log_embed)
             except discord.HTTPException:
                 pass
+
+    return True
 
 
 async def _show_order_preview(
@@ -464,6 +492,7 @@ async def _show_order_preview(
         panel_name=panel_name,
         service=service,
         order=order,
+        preview_interaction=interaction,
     )
     await interaction.edit_original_response(embed=view.make_embed(), view=view)
 
@@ -482,6 +511,7 @@ class OrderPreviewView(discord.ui.View):
         panel_name: str,
         service: OrderPreviewService,
         order,
+        preview_interaction: discord.Interaction | None = None,
     ) -> None:
         super().__init__(timeout=300)
         self.author_id = author_id
@@ -494,7 +524,23 @@ class OrderPreviewView(discord.ui.View):
         self.panel_name = panel_name
         self.service = service
         self.order = order
+        self.preview_interaction = preview_interaction
+        self._creating = False
         self._rebuild_candidates()
+
+    async def on_timeout(self) -> None:
+        if self._creating or self.preview_interaction is None:
+            return
+        try:
+            await self.preview_interaction.edit_original_response(
+                embed=EmbedBuilder.info(
+                    "Предпросмотр устарел",
+                    "Откройте форму заявки заново.",
+                ),
+                view=None,
+            )
+        except (discord.NotFound, discord.HTTPException):
+            pass
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id == self.author_id:
@@ -558,20 +604,65 @@ class OrderPreviewView(discord.ui.View):
 
     @discord.ui.button(label="Создать заказ", style=discord.ButtonStyle.success, row=3)
     async def create_order(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if self._creating:
+            await interaction.response.send_message(
+                embed=EmbedBuilder.info("Создание заявки", "Заявка уже создаётся."),
+                ephemeral=True,
+            )
+            return
+
+        self._creating = True
         for item in self.children:
             item.disabled = True
         await interaction.response.edit_message(embed=self.make_embed(), view=self)
-        await _finish_ticket_creation(
-            interaction,
-            self.panel_id,
-            self.form_id,
-            self.responses,
-            self.category_id,
-            self.ping_role_ids,
-            self.viewer_role_ids,
-            self.service.snapshots(self.order),
-        )
-        self.stop()
+        creation_failed = False
+        try:
+            created = await _finish_ticket_creation(
+                interaction,
+                self.panel_id,
+                self.form_id,
+                self.responses,
+                self.category_id,
+                self.ping_role_ids,
+                self.viewer_role_ids,
+                self.service.snapshots(self.order),
+            )
+        except Exception:
+            created = False
+            creation_failed = True
+            logger.exception("Failed to create a ticket from the order preview")
+
+        if created:
+            self.stop()
+            try:
+                await interaction.delete_original_response()
+            except discord.NotFound:
+                pass
+            except discord.HTTPException:
+                logger.warning("Could not delete the completed order preview")
+                try:
+                    await interaction.edit_original_response(
+                        content=None,
+                        embed=None,
+                        view=None,
+                    )
+                except (discord.NotFound, discord.HTTPException):
+                    logger.warning("Could not clear the completed order preview")
+            return
+
+        self._creating = False
+        for item in self.children:
+            item.disabled = False
+        self._rebuild_candidates()
+        await interaction.edit_original_response(embed=self.make_embed(), view=self)
+        if creation_failed:
+            await interaction.followup.send(
+                embed=EmbedBuilder.error(
+                    "Не удалось создать заявку",
+                    "Предпросмотр сохранён. Попробуйте ещё раз.",
+                ),
+                ephemeral=True,
+            )
 
     @discord.ui.button(label="Изменить", style=discord.ButtonStyle.secondary, row=3)
     async def edit_order(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
