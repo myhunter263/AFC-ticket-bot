@@ -16,18 +16,18 @@ def _catalog_item(name, category, group, factory_cost, mpf_cost, aliases=None):
 
 
 @pytest.mark.parametrize(
-    ("query", "item", "unit", "queues", "suffix"),
+    ("query", "item", "unit", "queues", "factory_unit"),
     [
-        ("3 винтовки", _catalog_item("Винтовка", "small-arms", "item", {"bmat": 100}, {"bmat": 100}, ["винтовка", "винтовки"]), "crate", 9, "за ящ"),
-        ("3 снаряда", _catalog_item("120-мм снаряд", "heavy-ammunition", "item", {"bmat": 120}, {"bmat": 120}, ["снаряд", "снаряда"]), "crate", 9, "за ящ"),
-        ("3 танка", _catalog_item("Танк", "vehicles", "equipment", {"rmat": 100}, {"rmat": 300}, ["танк", "танка"]), "item", 5, "за шт."),
-        ("3 контейнера", _catalog_item("Контейнер", "structures", "equipment", {"bmat": 300}, {"bmat": 300}, ["контейнер", "контейнера"]), "item", 5, "за шт."),
-        ("3 орудия", _catalog_item("Орудие", "structures", "equipment", {"rmat": 105}, {"rmat": 105}, ["орудие", "орудия"]), "item", 5, "за шт."),
-        ("3 стройоборудования", _catalog_item("Стройоборудование", "structures", "equipment", {"rmat": 150}, {"rmat": 150}, ["стройоборудование", "стройоборудования"]), "item", 5, "за шт."),
+        ("3 винтовки", _catalog_item("Винтовка", "small-arms", "item", {"bmat": 100}, {"bmat": 100}, ["винтовка", "винтовки"]), "crate", 9, "[:package:1 ящ.]"),
+        ("3 снаряда", _catalog_item("120-мм снаряд", "heavy-ammunition", "item", {"bmat": 120}, {"bmat": 120}, ["снаряд", "снаряда"]), "crate", 9, "[:package:1 ящ.]"),
+        ("3 танка", _catalog_item("Танк", "vehicles", "equipment", {"rmat": 100}, {"rmat": 300}, ["танк", "танка"]), "item", 5, "[1 шт.]"),
+        ("3 контейнера", _catalog_item("Контейнер", "structures", "equipment", {"bmat": 300}, {"bmat": 300}, ["контейнер", "контейнера"]), "item", 5, "[1 шт.]"),
+        ("3 орудия", _catalog_item("Орудие", "structures", "equipment", {"rmat": 105}, {"rmat": 105}, ["орудие", "орудия"]), "item", 5, "[1 шт.]"),
+        ("3 стройоборудования", _catalog_item("Стройоборудование", "structures", "equipment", {"rmat": 150}, {"rmat": 150}, ["стройоборудование", "стройоборудования"]), "item", 5, "[1 шт.]"),
     ],
 )
 def test_production_group_controls_order_unit_queue_and_formatter(
-    query, item, unit, queues, suffix
+    query, item, unit, queues, factory_unit
 ):
     service = OrderPreviewService([item])
     order = service.parse(query)
@@ -35,8 +35,10 @@ def test_production_group_controls_order_unit_queue_and_formatter(
     assert order.items[0].unit == unit
     assert order.items[0].mpf_crates == queues
     rendered = service.format_order(order)
-    assert suffix in rendered
-    assert f"на MPF за {queues} ящ" in rendered
+    assert ":house: Fac - " in rendered
+    assert f"за {factory_unit} {item.ru_name}" in rendered
+    assert ":factory: MPF - " in rendered
+    assert f"за [:package:{queues} ящ.] {item.ru_name}" in rendered
 
 
 def test_compact_multi_resource_cost_groups_raw_and_crated_sides():
@@ -48,4 +50,8 @@ def test_compact_multi_resource_cost_groups_raw_and_crated_sides():
     rendered = OrderPreviewService([item]).format_order(
         OrderPreviewService([item]).parse("1 смешанная техника")
     )
-    assert "100 BMat + 20 RMat или 1 ящ BMat + 1 ящ RMat за шт." in rendered
+    assert (
+        ":house: Fac - 100 BMat/[:package:1 ящ.] BMat + "
+        "20 RMat/[:package:1 ящ.] RMat "
+        "за [1 шт.] Смешанная техника"
+    ) in rendered

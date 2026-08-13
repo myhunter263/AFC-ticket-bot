@@ -41,7 +41,7 @@ class AdminPanelView(discord.ui.View):
             status = "✅" if p.is_active else "🔴"
             embed.add_field(
                 name=f"{status} [{p.id}] {p.name}",
-                value=f"Канал: <#{p.channel_id}>",
+                value=f"Канал: <#{p.panel_channel_id}>",
                 inline=False,
             )
 
@@ -211,7 +211,7 @@ class AdminPanelView(discord.ui.View):
                 assignees_text = "Никто"
             embed.add_field(
                 name=f"#{t.number:04d}",
-                value=f"Автор: <@{t.author_id}>\nСтатус: {status_name}\nИсполнители: {assignees_text}\nКанал: <#{t.channel_id}>",
+                value=f"Автор: <@{t.author_id}>\nСтатус: {status_name}\nИсполнители: {assignees_text}\nКанал: <#{t.ticket_channel_id}>",
                 inline=True,
             )
 
@@ -531,7 +531,7 @@ class PanelSetupView(discord.ui.View):
         async with async_session_maker() as session:
             p = await TicketService.get_panel_by_id(session, panel_id)
             if p:
-                p.message_id = msg.id
+                p.panel_message_id = msg.id
                 await session.commit()
 
         await interaction.followup.send(
@@ -562,7 +562,7 @@ class PanelSelectEditView(discord.ui.View):
                     embed=EmbedBuilder.error("Ошибка", "Панель не найдена."), ephemeral=True
                 )
                 return
-            current_channel_id = panel.channel_id
+            current_channel_id = panel.panel_channel_id
             current_category_id = panel.category_id
             current_ping_role_ids = panel.ping_role_ids or []
             current_viewer_role_ids = panel.viewer_role_ids or []
@@ -632,8 +632,8 @@ class PanelSelectDeleteView(discord.ui.View):
                 )
                 return
             name = panel.name
-            channel_id = panel.channel_id
-            message_id = panel.message_id
+            channel_id = panel.panel_channel_id
+            message_id = panel.panel_message_id
             await TicketService.delete_panel(session, panel)
             await AuditService.log(
                 session,
@@ -1140,7 +1140,7 @@ class PanelExtendedEditView(discord.ui.View):
                 return
 
             if self.new_channel_id:
-                p.channel_id = self.new_channel_id
+                p.panel_channel_id = self.new_channel_id
             if self.new_category_id is not None:
                 p.category_id = self.new_category_id
             if self.new_ping_role_ids is not None:
@@ -1161,8 +1161,8 @@ class PanelExtendedEditView(discord.ui.View):
             )
             await session.commit()
 
-            channel_id_to_use = p.channel_id
-            message_id = p.message_id
+            channel_id_to_use = p.panel_channel_id
+            message_id = p.panel_message_id
             panel_name = p.name
             panel_desc = p.description
             panel_color = p.color

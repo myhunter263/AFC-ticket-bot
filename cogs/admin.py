@@ -125,7 +125,7 @@ class AdminCog(commands.Cog):
             status_str = t.status.name if t.status else "—"
             embed.add_field(
                 name=f"#{t.number:04d} — {status_str}",
-                value=f"Автор: <@{t.author_id}> | Канал: <#{t.channel_id}>",
+                value=f"Автор: <@{t.author_id}> | Канал: <#{t.ticket_channel_id}>",
                 inline=False,
             )
 

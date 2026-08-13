@@ -59,8 +59,8 @@ class TicketPanel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     guild_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("guilds.id", ondelete="CASCADE"))
-    channel_id: Mapped[int] = mapped_column(BigInteger)
-    message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    panel_channel_id: Mapped[int] = mapped_column(BigInteger)
+    panel_message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     name: Mapped[str] = mapped_column(String(100))
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     color: Mapped[int] = mapped_column(Integer, default=0x5865F2)
@@ -156,9 +156,9 @@ class Ticket(Base):
     status_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("ticket_statuses.id", ondelete="SET NULL"), nullable=True
     )
-    channel_id: Mapped[int] = mapped_column(BigInteger, unique=True)
+    ticket_channel_id: Mapped[int] = mapped_column(BigInteger, unique=True)
     original_category_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
-    message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    ticket_message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     author_id: Mapped[int] = mapped_column(BigInteger)
     assignee_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     number: Mapped[int] = mapped_column(Integer)

@@ -71,5 +71,8 @@ def test_normalized_order_replaces_raw_text_in_main_ticket_embed():
     rendered = "\n".join(field.value for field in embed.fields)
     assert "15 фальшионов" not in rendered
     assert "Фальшион" in rendered
-    assert "135 RMat или 7 ящ RMat за шт." in rendered
-    assert "1 619 RMat или 81 ящ RMat на MPF за 5 ящ" in rendered
+    assert ":house: Fac - 135 RMat/[:package:7 ящ.] RMat за [1 шт.] Фальшион" in rendered
+    assert (
+        ":factory: MPF - 1 619 RMat/[:package:81 ящ.] RMat "
+        "за [:package:5 ящ.] Фальшион"
+    ) in rendered

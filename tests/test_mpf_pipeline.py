@@ -88,6 +88,9 @@ def test_xiphos_mpf_cost_survives_parser_snapshot_and_discord_embed():
     assert order_item.mpf_cost == {"rmat": 261}
     assert snapshot["cost_snapshot"]["mpf"] == {"rmat": 261}
     assert "261 RMat" in rendered
-    assert "25 RMat или 2 ящ RMat за шт." in rendered
-    assert "261 RMat или 14 ящ RMat на MPF за 5 ящ" in rendered
+    assert ":house: Fac - 25 RMat/[:package:2 ящ.] RMat за [1 шт.] Ксифос" in rendered
+    assert (
+        ":factory: MPF - 261 RMat/[:package:14 ящ.] RMat "
+        "за [:package:5 ящ.] Ксифос"
+    ) in rendered
     assert "264 RMat" not in rendered

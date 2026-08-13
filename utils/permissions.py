@@ -23,7 +23,7 @@ class PermissionChecker:
     ) -> bool:
         if (
             ticket.guild_id != interaction.guild_id
-            or ticket.channel_id != interaction.channel_id
+            or ticket.ticket_channel_id != interaction.channel_id
         ):
             return False
         return (

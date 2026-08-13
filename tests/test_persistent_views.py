@@ -23,11 +23,11 @@ class SessionContext:
 async def test_startup_restores_panel_and_ticket_views(monkeypatch):
     panel = SimpleNamespace(
         id=11,
-        message_id=101,
+        panel_message_id=101,
         button_label="Создать заявку",
         button_emoji=None,
     )
-    ticket = SimpleNamespace(id=22, guild_id=33, message_id=202)
+    ticket = SimpleNamespace(id=22, guild_id=33, ticket_message_id=202)
     session = SimpleNamespace(
         execute=AsyncMock(
             side_effect=[

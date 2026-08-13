@@ -164,6 +164,8 @@ async def _restore_ticket_channel(session, ticket, channel: discord.TextChannel)
 class TicketPanelButtonView(discord.ui.View):
     """Persistent view attached to the panel message in a channel."""
 
+    message_type = "APPLICATION_PANEL"
+
     def __init__(self, panel_id: int, button_label: str, button_emoji: Optional[str]) -> None:
         super().__init__(timeout=None)
         self.panel_id = panel_id
@@ -218,9 +220,18 @@ class TicketPanelButtonView(discord.ui.View):
                     if f.is_active
                 ]
             panel_name = panel.name
+            panel_message_id = panel.panel_message_id
+            panel_channel_id = panel.panel_channel_id
             category_id = panel.category_id
             ping_role_ids = panel.ping_role_ids or []
             viewer_role_ids = panel.viewer_role_ids or []
+
+        logger.info(
+            "Application panel: channel_id=%s message_id=%s interaction_message_id=%s",
+            panel_channel_id,
+            panel_message_id,
+            getattr(getattr(interaction, "message", None), "id", None),
+        )
 
         if form_fields:
             async def on_modal_submit(inter: discord.Interaction, responses: list[dict]) -> None:
@@ -249,7 +260,7 @@ class TicketPanelButtonView(discord.ui.View):
             )
             await interaction.response.send_modal(modal)
         else:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer(ephemeral=True, thinking=True)
             await _finish_ticket_creation(
                 interaction, self.panel_id, None, [], category_id, ping_role_ids, viewer_role_ids
             )
@@ -368,6 +379,11 @@ async def _finish_ticket_creation(
             embed=embed,
             view=ticket_view,
         )
+        logger.info(
+            "Ticket: channel_id=%s message_id=%s",
+            channel.id,
+            ticket_message.id,
+        )
 
         async with async_session_maker() as session:
             saved_ticket = await TicketService.get_by_id(session, ticket_id)
@@ -375,7 +391,7 @@ async def _finish_ticket_creation(
                 raise RuntimeError(
                     f"Ticket {ticket_id} disappeared before saving its message ID"
                 )
-            saved_ticket.message_id = ticket_message.id
+            saved_ticket.ticket_message_id = ticket_message.id
             await session.commit()
     except Exception:
         logger.exception(
@@ -456,10 +472,17 @@ async def _show_order_preview(
     order_text: str,
     panel_name: str,
 ) -> None:
+    owns_original_response = False
     if not interaction.response.is_done():
-        await interaction.response.defer(ephemeral=True)
+        # Force a new ephemeral response. A component defer without
+        # thinking=True may target the component's source panel message.
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        owns_original_response = True
     async with async_session_maker() as session:
         catalog = await ItemCatalogService.get_catalog(session, interaction.guild_id)
+        panel = await TicketService.get_panel_by_id(session, panel_id)
+        panel_message_id = panel.panel_message_id if panel else None
+        panel_channel_id = panel.panel_channel_id if panel else None
         await session.commit()
 
     service = OrderPreviewService(catalog)
@@ -472,12 +495,19 @@ async def _show_order_preview(
                 )
             await session.commit()
     if not order.items and not order.unresolved:
-        await interaction.edit_original_response(
+        preview_error_sender = (
+            interaction.edit_original_response
+            if owns_original_response
+            else interaction.followup.send
+        )
+        preview_error_kwargs = {} if owns_original_response else {"ephemeral": True}
+        await preview_error_sender(
             embed=EmbedBuilder.error(
                 "Заказ не распознан",
                 "Укажите каждую позицию с количеством, например: `15 ящиков аргенти`.",
             ),
             view=None,
+            **preview_error_kwargs,
         )
         return
 
@@ -492,12 +522,30 @@ async def _show_order_preview(
         panel_name=panel_name,
         service=service,
         order=order,
-        preview_interaction=interaction,
+        panel_message_id=panel_message_id,
     )
-    await interaction.edit_original_response(embed=view.make_embed(), view=view)
+    if owns_original_response:
+        preview_message = await interaction.edit_original_response(embed=view.make_embed(), view=view)
+    else:
+        preview_message = await interaction.followup.send(
+            embed=view.make_embed(), view=view, ephemeral=True, wait=True
+        )
+    view.attach_preview(preview_message)
+    logger.info(
+        "Application panel: channel_id=%s message_id=%s",
+        panel_channel_id,
+        panel_message_id,
+    )
+    logger.info(
+        "Preview: channel_id=%s message_id=%s",
+        getattr(getattr(preview_message, "channel", None), "id", interaction.channel_id),
+        view.preview_message_id,
+    )
 
 
 class OrderPreviewView(discord.ui.View):
+    message_type = "ORDER_PREVIEW"
+
     def __init__(
         self,
         *,
@@ -511,7 +559,7 @@ class OrderPreviewView(discord.ui.View):
         panel_name: str,
         service: OrderPreviewService,
         order,
-        preview_interaction: discord.Interaction | None = None,
+        panel_message_id: int | None = None,
     ) -> None:
         super().__init__(timeout=300)
         self.author_id = author_id
@@ -524,15 +572,46 @@ class OrderPreviewView(discord.ui.View):
         self.panel_name = panel_name
         self.service = service
         self.order = order
-        self.preview_interaction = preview_interaction
+        self.panel_message_id = panel_message_id
+        self.preview_message = None
+        self.preview_message_id: int | None = None
         self._creating = False
         self._rebuild_candidates()
 
+    def attach_preview(self, preview_message) -> None:
+        self.preview_message = preview_message
+        self.preview_message_id = preview_message.id
+
+    def _targets_application_panel(self, interaction: discord.Interaction) -> bool:
+        interaction_message_id = getattr(getattr(interaction, "message", None), "id", None)
+        return bool(
+            self.panel_message_id is not None
+            and interaction_message_id == self.panel_message_id
+        )
+
+    async def _edit_preview(self) -> None:
+        if self.preview_message is not None:
+            await self.preview_message.edit(embed=self.make_embed(), view=self)
+
+    async def _delete_preview(self) -> None:
+        if self.preview_message is None or self.preview_message_id is None:
+            logger.warning("Preview deletion skipped: preview message is not attached")
+            return
+        if self.preview_message_id == self.panel_message_id:
+            logger.critical(
+                "Refusing to delete application panel as preview: message_id=%s",
+                self.preview_message_id,
+            )
+            return
+        logger.info("Deleting ORDER_PREVIEW message_id=%s", self.preview_message_id)
+        await self.preview_message.delete()
+        logger.info("Deleted message_id=%s message_type=ORDER_PREVIEW", self.preview_message_id)
+
     async def on_timeout(self) -> None:
-        if self._creating or self.preview_interaction is None:
+        if self._creating or self.preview_message is None:
             return
         try:
-            await self.preview_interaction.edit_original_response(
+            await self.preview_message.edit(
                 embed=EmbedBuilder.info(
                     "Предпросмотр устарел",
                     "Откройте форму заявки заново.",
@@ -543,6 +622,19 @@ class OrderPreviewView(discord.ui.View):
             pass
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if self._targets_application_panel(interaction):
+            logger.critical(
+                "Blocked ORDER_PREVIEW action against APPLICATION_PANEL message_id=%s",
+                self.panel_message_id,
+            )
+            await interaction.response.send_message(
+                embed=EmbedBuilder.error(
+                    "Ошибка интерфейса",
+                    "Постоянная панель защищена. Откройте форму заново.",
+                ),
+                ephemeral=True,
+            )
+            return False
         if interaction.user.id == self.author_id:
             return True
         await interaction.response.send_message(
@@ -604,6 +696,20 @@ class OrderPreviewView(discord.ui.View):
 
     @discord.ui.button(label="Создать заказ", style=discord.ButtonStyle.success, row=3)
     async def create_order(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if self._targets_application_panel(interaction):
+            logger.critical(
+                "Blocked ticket creation callback against APPLICATION_PANEL message_id=%s",
+                self.panel_message_id,
+            )
+            await interaction.response.send_message(
+                embed=EmbedBuilder.error(
+                    "\u041e\u0448\u0438\u0431\u043a\u0430 \u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430",
+                    "\u041f\u043e\u0441\u0442\u043e\u044f\u043d\u043d\u0430\u044f \u043f\u0430\u043d\u0435\u043b\u044c \u0437\u0430\u0449\u0438\u0449\u0435\u043d\u0430. "
+                    "\u041e\u0442\u043a\u0440\u043e\u0439\u0442\u0435 \u0444\u043e\u0440\u043c\u0443 \u0437\u0430\u043d\u043e\u0432\u043e.",
+                ),
+                ephemeral=True,
+            )
+            return
         if self._creating:
             await interaction.response.send_message(
                 embed=EmbedBuilder.info("Создание заявки", "Заявка уже создаётся."),
@@ -635,26 +741,21 @@ class OrderPreviewView(discord.ui.View):
         if created:
             self.stop()
             try:
-                await interaction.delete_original_response()
+                await self._delete_preview()
             except discord.NotFound:
                 pass
             except discord.HTTPException:
                 logger.warning("Could not delete the completed order preview")
-                try:
-                    await interaction.edit_original_response(
-                        content=None,
-                        embed=None,
-                        view=None,
-                    )
-                except (discord.NotFound, discord.HTTPException):
-                    logger.warning("Could not clear the completed order preview")
             return
 
         self._creating = False
         for item in self.children:
             item.disabled = False
         self._rebuild_candidates()
-        await interaction.edit_original_response(embed=self.make_embed(), view=self)
+        try:
+            await self._edit_preview()
+        except (discord.NotFound, discord.HTTPException):
+            logger.warning("Could not restore the order preview after failed creation")
         if creation_failed:
             await interaction.followup.send(
                 embed=EmbedBuilder.error(
@@ -705,6 +806,8 @@ class OrderPreviewView(discord.ui.View):
 
 class TicketView(discord.ui.View):
     """Controls attached to the ticket embed message."""
+
+    message_type = "TICKET_MAIN"
 
     def __init__(self, ticket_id: int, guild_id: int) -> None:
         super().__init__(timeout=None)
@@ -1486,7 +1589,7 @@ async def _refresh_ticket_embed(interaction: discord.Interaction, ticket_id: int
     try:
         async with async_session_maker() as session:
             ticket = await TicketService.get_by_id(session, ticket_id)
-            if not ticket or not ticket.message_id:
+            if not ticket or not ticket.ticket_message_id:
                 return
             responses = [
                 {
@@ -1503,7 +1606,7 @@ async def _refresh_ticket_embed(interaction: discord.Interaction, ticket_id: int
             status_emoji = status.emoji or "" if status else ""
             assignee_user_ids = [a.user_id for a in ticket.assignees]
             order_items = list(ticket.order_items)
-            message_id = ticket.message_id
+            message_id = ticket.ticket_message_id
 
         channel = interaction.channel
         try:

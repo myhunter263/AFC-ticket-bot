@@ -79,7 +79,7 @@ class TicketService:
             guild_id=guild_id,
             panel_id=panel_id,
             form_id=form_id,
-            channel_id=channel_id,
+            ticket_channel_id=channel_id,
             original_category_id=original_category_id,
             author_id=author_id,
             status_id=status_id,
@@ -123,7 +123,7 @@ class TicketService:
     ) -> Optional[Ticket]:
         result = await session.execute(
             select(Ticket)
-            .where(Ticket.channel_id == channel_id)
+            .where(Ticket.ticket_channel_id == channel_id)
             .options(
                 selectinload(Ticket.responses),
                 selectinload(Ticket.status),
@@ -281,7 +281,7 @@ class TicketService:
     ) -> TicketPanel:
         panel = TicketPanel(
             guild_id=guild_id,
-            channel_id=channel_id,
+            panel_channel_id=channel_id,
             name=name,
             description=description,
             color=color,

@@ -170,13 +170,14 @@ async def test_ticket_snapshot_does_not_change_after_catalog_sync(db_session):
     await ItemSyncService.sync(db_session, 1, StaticProvider(items, recipes))
     item = (await db_session.execute(select(FoxholeItem))).scalar_one()
     panel = TicketPanel(
-        guild_id=1, name="Panel", category_id=1, channel_id=1, message_id=1, created_by=1
+        guild_id=1, name="Panel", category_id=1, panel_channel_id=1,
+        panel_message_id=1, created_by=1
     )
     status = TicketStatus(guild_id=1, name="Open", emoji="O", color=1, order=1)
     db_session.add_all([panel, status])
     await db_session.flush()
     ticket = Ticket(
-        guild_id=1, panel_id=panel.id, channel_id=1, author_id=1,
+        guild_id=1, panel_id=panel.id, ticket_channel_id=1, author_id=1,
         status_id=status.id, number=1,
     )
     db_session.add(ticket)

@@ -34,15 +34,16 @@ class TicketsCog(commands.Cog):
             panels = result.scalars().all()
             for panel in panels:
                 view = TicketPanelButtonView(panel.id, panel.button_label, panel.button_emoji)
-                self.bot.add_view(view, message_id=panel.message_id)
+                if panel.panel_message_id is not None:
+                    self.bot.add_view(view, message_id=panel.panel_message_id)
 
             result = await session.execute(
-                select(Ticket).where(Ticket.message_id.is_not(None))
+                select(Ticket).where(Ticket.ticket_message_id.is_not(None))
             )
             tickets = result.scalars().all()
             for ticket in tickets:
                 view = TicketView(ticket_id=ticket.id, guild_id=ticket.guild_id)
-                self.bot.add_view(view, message_id=ticket.message_id)
+                self.bot.add_view(view, message_id=ticket.ticket_message_id)
 
         logger.info(
             "Restored %d panel views and %d ticket views.",
