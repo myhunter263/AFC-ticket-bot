@@ -1,21 +1,19 @@
 from __future__ import annotations
 
 import abc
-import ast
 import datetime
 import hashlib
+import html
 import json
 import logging
 import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Any
-from urllib.parse import urljoin
 
 import aiohttp
 
 from config import config
-from services.text_normalizer import TextNormalizer
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +22,6 @@ class FoxholeDataError(RuntimeError):
     pass
 
 
-# Kept as an import-compatible name for the existing Discord UI.
 FoxholeAPIError = FoxholeDataError
 
 
@@ -56,70 +53,46 @@ class FoxholeDataProvider(abc.ABC):
         return (await self.fetch_dataset()).source_version
 
 
-class _ItemButtonParser(HTMLParser):
+class _FactoryPageParser(HTMLParser):
+    """Extracts server-rendered item records from Foxhole Queues Calculator."""
+
     def __init__(self) -> None:
-        super().__init__()
-        self.items: dict[str, dict[str, str]] = {}
-        self.script_url: str | None = None
+        super().__init__(convert_charrefs=True)
+        self.items: list[dict[str, str]] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        values = dict(attrs)
-        if tag == "script" and values.get("src", "").endswith("calculator.js"):
-            self.script_url = values["src"]
-        if tag != "button" or not values.get("data-item"):
-            return
-        classes = set((values.get("class") or "").casefold().split())
-        category = next(
-            (
-                value
-                for value in (
-                    "smallarms", "heavyarms", "heavyammo", "utilities", "supplies",
-                    "medical", "uniforms", "vehicles", "shippables",
-                )
-                if value in classes
-            ),
-            "unknown",
-        )
-        faction = "neutral"
-        if "colonial" in classes and "warden" not in classes:
-            faction = "colonial"
-        elif "warden" in classes and "colonial" not in classes:
-            faction = "warden"
-        self.items[values["data-item"]] = {"category": category, "faction": faction}
+        values = {key: value or "" for key, value in attrs}
+        classes = set(values.get("class", "").split())
+        if tag == "div" and "item" in classes and values.get("id"):
+            self.items.append(values)
 
 
 class FoxholeHQDataProvider(FoxholeDataProvider):
-    """Reads the structured iteminfo dataset embedded in FoxholeHQ's calculator bundle.
+    """Provider for the Update 65 Foxhole Queues Calculator on foxholehq.net.
 
-    FoxholeHQ currently exposes no public catalogue API. Its calculator ships a
-    JavaScript object named ``iteminfo``. This parser extracts that data without
-    executing upstream JavaScript and fails closed when the bundle contract changes.
+    The site server-renders each item as a structured ``div.item`` with stable ID,
+    production queue and material attributes. Tooltip markup supplies its name,
+    type, description, crate quantity and explicit production methods.
     """
 
     SOURCE = "foxholehq"
-    _OBJECT_MARKER = "const iteminfo="
-    _OBJECT_END = ";function _0x221e"
-    _ARRAY_START = "var _0x5c45f0=["
-    _ARRAY_END = "];_0x221e=function"
-    _REFERENCE = re.compile(r"_0x362918\((0x[0-9a-f]+)\)")
-    _STRING = re.compile(r"'((?:\\.|[^'\\])*)'", re.DOTALL)
-    _NAME_REFERENCE = re.compile(
-        r"'((?:\\.|[^'\\])*)'\s*:\s*\{\s*'name'\s*:\s*"
-        r"_0x362918\((0x[0-9a-f]+)\)"
+    FACTORY_PATH = "/factory"
+    _VERSION = re.compile(r"Updated\s+to\s+1[.]([0-9]+)(?:[.]x)+", re.IGNORECASE)
+    _RELEASE = re.compile(
+        r"([0-9]+[a-z]{2}\s+[A-Za-z]+\s+[0-9]{4}).{0,1200}?Update FQC to Update\s+([0-9]+)",
+        re.IGNORECASE | re.DOTALL,
     )
-    _VERSION = re.compile(
-        r"Up to date with\s+(Patch\s+[^<(]+?)\s*\(Last Updated\s+([^)]+)\)",
-        re.IGNORECASE,
-    )
-    _PRODUCES = re.compile(r"(\d+)x\s+per\s+crate", re.IGNORECASE)
-    _MPF_CATEGORIES = {
-        "smallarms", "heavyarms", "heavyammo", "supplies", "uniforms", "vehicles",
-        "shippables",
-    }
-    _VEHICLE_TYPES = {
-        "apc", "armored car", "boat", "construction vehicle", "half-track",
-        "light tank", "motorcycle", "pushgun", "tank", "tankette", "trailer",
-        "truck", "vehicle",
+    _TITLE = re.compile(r"item-title-box.*?<span>(.*?)</span>", re.IGNORECASE | re.DOTALL)
+    _TYPE = re.compile(r"item-type[^>]*>(.*?)<", re.IGNORECASE | re.DOTALL)
+    _DESCRIPTION = re.compile(r"item-description[^>]*>(.*?)<", re.IGNORECASE | re.DOTALL)
+    _CRATE = re.compile(r"item-crates[^>]*>.*?crate of\s+(\d+)x", re.IGNORECASE | re.DOTALL)
+    _PRODUCED_AT = re.compile(r"Produced at:\s*([^<]+)", re.IGNORECASE)
+    _MPF_ONLY_CATEGORIES = {"vehicles", "structures"}
+    _MATERIALS = {
+        "bmats": "bmat",
+        "rmats": "rmat",
+        "epowders": "emat",
+        "hepowders": "hemat",
     }
 
     def __init__(self, base_url: str | None = None, min_items: int | None = None) -> None:
@@ -132,23 +105,21 @@ class FoxholeHQDataProvider(FoxholeDataProvider):
         if not self.base_url:
             raise FoxholeDataError("FOXHOLEHQ_BASE_URL не настроен")
         timeout = aiohttp.ClientTimeout(total=30)
-        headers = {"User-Agent": "AFC-Ticket-Bot/2.0 (FoxholeHQ catalogue sync)"}
+        headers = {"User-Agent": "AFC-Ticket-Bot/2.1 (FoxholeHQ catalogue sync)"}
         try:
             async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-                html = await self._get_text(session, f"{self.base_url}/calculator")
-                page = _ItemButtonParser()
-                page.feed(html)
-                script_url = urljoin(
-                    f"{self.base_url}/calculator",
-                    page.script_url or "/static/calculator.js",
-                )
-                bundle = await self._get_text(session, script_url)
+                async with session.get(f"{self.base_url}{self.FACTORY_PATH}") as response:
+                    response.raise_for_status()
+                    page = await response.text()
         except (aiohttp.ClientError, TimeoutError, UnicodeError) as exc:
             raise FoxholeDataError(f"FoxholeHQ недоступен: {exc}") from exc
+        return self.parse_page(page)
 
-        version, updated_at = self._parse_version(html)
-        raw_items = self._parse_iteminfo(bundle)
-        items, recipes = self._normalize(raw_items, page.items, version, updated_at)
+    def parse_page(self, page: str) -> FoxholeDataset:
+        parser = _FactoryPageParser()
+        parser.feed(page)
+        version, updated_at = self._parse_version(page)
+        items, recipes = self._normalize(parser.items, version, updated_at)
         self._validate(items, recipes)
         canonical = json.dumps(
             {"items": items, "recipes": recipes},
@@ -165,124 +136,100 @@ class FoxholeHQDataProvider(FoxholeDataProvider):
             dataset_hash=hashlib.sha256(canonical.encode()).hexdigest(),
         )
 
-    @staticmethod
-    async def _get_text(session: aiohttp.ClientSession, url: str) -> str:
-        async with session.get(url) as response:
-            response.raise_for_status()
-            return await response.text()
+    @classmethod
+    def _parse_version(cls, page: str) -> tuple[str, datetime.datetime | None]:
+        version_match = cls._VERSION.search(page)
+        if not version_match:
+            raise FoxholeDataError("FoxholeHQ не указал версию игрового dataset")
+        patch = version_match.group(1)
+        updated_at = None
+        release_matches = list(cls._RELEASE.finditer(page))
+        release = next((match for match in release_matches if match.group(2) == patch), None)
+        if release:
+            for date_format in ("%dth %B %Y", "%dst %B %Y", "%dnd %B %Y", "%drd %B %Y"):
+                try:
+                    updated_at = datetime.datetime.strptime(release.group(1), date_format)
+                    break
+                except ValueError:
+                    continue
+        return f"Patch {patch}", updated_at
 
     @classmethod
-    def _decode_string(cls, value: str) -> str:
-        try:
-            return ast.literal_eval("'" + value + "'")
-        except (SyntaxError, ValueError) as exc:
-            raise FoxholeDataError("FoxholeHQ bundle содержит неподдерживаемую строку") from exc
-
-    @classmethod
-    def _parse_iteminfo(cls, bundle: str) -> dict[str, dict[str, Any]]:
-        object_start = bundle.find(cls._OBJECT_MARKER)
-        object_end = bundle.find(cls._OBJECT_END, object_start)
-        array_start = bundle.find(cls._ARRAY_START, object_end)
-        array_end = bundle.find(cls._ARRAY_END, array_start)
-        if min(object_start, object_end, array_start, array_end) < 0:
-            raise FoxholeDataError("Структура calculator.js изменилась: iteminfo не найден")
-
-        object_source = bundle[object_start + len(cls._OBJECT_MARKER):object_end]
-        array_source = bundle[array_start + len(cls._ARRAY_START):array_end]
-        strings = [cls._decode_string(match.group(1)) for match in cls._STRING.finditer(array_source)]
-        if not strings:
-            raise FoxholeDataError("Структура calculator.js изменилась: таблица строк пуста")
-
-        base = 0x194
-        scores: list[tuple[int, int]] = []
-        name_refs = list(cls._NAME_REFERENCE.finditer(object_source))
-        for shift in range(len(strings)):
-            score = sum(
-                strings[(int(match.group(2), 16) - base + shift) % len(strings)]
-                == cls._decode_string(match.group(1))
-                for match in name_refs
-            )
-            scores.append((score, shift))
-        score, shift = max(scores)
-        if score < 10:
-            raise FoxholeDataError("Структура calculator.js изменилась: не удалось декодировать iteminfo")
-
-        def replace_reference(match: re.Match[str]) -> str:
-            index = int(match.group(1), 16) - base
-            return repr(strings[(index + shift) % len(strings)])
-
-        decoded = cls._REFERENCE.sub(replace_reference, object_source)
-        try:
-            result = ast.literal_eval(decoded)
-        except (SyntaxError, ValueError) as exc:
-            raise FoxholeDataError("Структура calculator.js изменилась: iteminfo повреждён") from exc
-        if not isinstance(result, dict):
-            raise FoxholeDataError("FoxholeHQ iteminfo имеет неверный тип")
-        return result
-
-    @classmethod
-    def _parse_version(cls, html: str) -> tuple[str, datetime.datetime | None]:
-        match = cls._VERSION.search(html)
+    def _text(cls, pattern: re.Pattern[str], tooltip: str, default: str = "") -> str:
+        match = pattern.search(tooltip)
         if not match:
-            return "unknown", None
-        version = match.group(1).strip()
-        try:
-            updated_at = datetime.datetime.strptime(match.group(2).strip(), "%m/%d/%y")
-        except ValueError:
-            updated_at = None
-        return version, updated_at
+            return default
+        value = re.sub(r"<[^>]+>", "", match.group(1))
+        return html.unescape(value).strip()
 
     @classmethod
     def _normalize(
         cls,
-        raw_items: dict[str, dict[str, Any]],
-        page_items: dict[str, dict[str, str]],
+        rows: list[dict[str, str]],
         version: str,
         updated_at: datetime.datetime | None,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         items: list[dict[str, Any]] = []
         recipes: list[dict[str, Any]] = []
-        for upstream_key, raw in raw_items.items():
-            if not isinstance(raw, dict):
+        for row in rows:
+            external_id = row["id"].strip().casefold()
+            tooltip = html.unescape(row.get("title", ""))
+            api_name = cls._text(cls._TITLE, tooltip)
+            if not api_name:
                 continue
-            api_name = str(raw.get("name") or upstream_key).strip()
-            metadata = page_items.get(upstream_key) or page_items.get(api_name) or {}
-            category = metadata.get("category", "unknown")
-            item_type = str(raw.get("type") or "unknown").strip()
-            is_vehicle = category == "vehicles" or item_type.casefold() in cls._VEHICLE_TYPES
-            match = cls._PRODUCES.search(str(raw.get("produces") or ""))
-            crate_size = int(match.group(1)) if match else 1
+            category = row.get("queue") or "unknown"
+            classes = set(row.get("class", "").casefold().split())
+            faction = "colonial" if "colonial" in classes else "warden" if "warden" in classes else "neutral"
+            item_type = cls._text(cls._TYPE, tooltip, "unknown")
+            description = cls._text(cls._DESCRIPTION, tooltip)
+            crate_match = cls._CRATE.search(tooltip)
+            crate_size = int(crate_match.group(1)) if crate_match else 1
+            produced_at = cls._text(cls._PRODUCED_AT, tooltip)
+            methods = [value.strip() for value in produced_at.split(",") if value.strip()]
+            is_vehicle = category == "vehicles"
+            mpf_available = category in cls._MPF_ONLY_CATEGORIES or any(
+                "mass production factory" in method.casefold() for method in methods
+            )
             cost = {
-                resource: int(raw.get(resource) or 0)
-                for resource in ("bmat", "rmat", "emat", "hemat")
-                if int(raw.get(resource) or 0) > 0
+                target: int(row[source])
+                for source, target in cls._MATERIALS.items()
+                if row.get(source) and int(row[source]) > 0
             }
-            api_id = "foxholehq:" + TextNormalizer.normalize(upstream_key, remove_service_words=False)
-            fingerprint_data = {
+            factory_cost = cost
+            if is_vehicle and crate_size > 1 and all(value % crate_size == 0 for value in cost.values()):
+                factory_cost = {resource: value // crate_size for resource, value in cost.items()}
+            standard_method = next(
+                (method for method in methods if "mass production" not in method.casefold()),
+                "Garage" if is_vehicle else "Factory",
+            )
+            fingerprint_payload = {
                 "type": item_type,
-                "description": raw.get("desc"),
-                "ammo": raw.get("ammo"),
-                "produces": raw.get("produces"),
+                "description": description,
+                "crate_size": crate_size,
+                "methods": methods,
             }
             fingerprint = hashlib.sha256(
-                json.dumps(fingerprint_data, sort_keys=True, ensure_ascii=False).encode()
+                json.dumps(fingerprint_payload, sort_keys=True, ensure_ascii=False).encode()
             ).hexdigest()
-            mpf_available = category in cls._MPF_CATEGORIES
-            factory_method = "garage" if is_vehicle else "factory"
-            factory_cost = cost
-            if is_vehicle and crate_size >= 3 and all(value % 3 == 0 for value in cost.values()):
-                factory_cost = {resource: value // 3 for resource, value in cost.items()}
+            raw_data = {
+                "external_id": external_id,
+                "type": item_type,
+                "description": description,
+                "production_methods": methods,
+                "time": float(row.get("time") or 0),
+                "attributes": {key: row[key] for key in cls._MATERIALS if row.get(key)},
+            }
             item = {
-                "api_id": api_id[:200],
-                "upstream_key": upstream_key,
+                "api_id": f"foxholehq:{external_id}"[:200],
+                "upstream_key": external_id,
                 "api_name": api_name,
                 "category": category,
-                "faction": metadata.get("faction"),
+                "faction": faction,
                 "is_vehicle": is_vehicle,
                 "crate_size": crate_size,
                 "amount_produced": crate_size,
                 "vehicle_crate_size": crate_size if is_vehicle else 1,
-                "factory_site": factory_method.title(),
+                "factory_site": standard_method,
                 "factory_cost": factory_cost,
                 "mpf_base_cost": cost if mpf_available else {},
                 "mpf_available": mpf_available,
@@ -291,16 +238,16 @@ class FoxholeHQDataProvider(FoxholeDataProvider):
                 "source_version": version,
                 "source_updated_at": updated_at.isoformat() if updated_at else None,
                 "upstream_fingerprint": fingerprint,
-                "raw_data": raw,
+                "raw_data": raw_data,
             }
             items.append(item)
             recipes.append({
                 "api_id": item["api_id"],
-                "production_method": factory_method,
+                "production_method": standard_method.casefold().replace(" ", "_"),
                 "output_quantity": 1,
                 "output_unit": "vehicle" if is_vehicle else "crate",
                 "materials": factory_cost,
-                "raw_data": raw,
+                "raw_data": raw_data,
             })
             if mpf_available:
                 recipes.append({
@@ -309,28 +256,28 @@ class FoxholeHQDataProvider(FoxholeDataProvider):
                     "output_quantity": crate_size if is_vehicle else 1,
                     "output_unit": "vehicle" if is_vehicle else "crate",
                     "materials": cost,
-                    "raw_data": raw,
+                    "raw_data": raw_data,
                 })
-        items.sort(key=lambda row: row["api_id"])
-        recipes.sort(key=lambda row: (row["api_id"], row["production_method"]))
+        items.sort(key=lambda value: value["api_id"])
+        recipes.sort(key=lambda value: (value["api_id"], value["production_method"]))
         return items, recipes
 
     def _validate(self, items: list[dict[str, Any]], recipes: list[dict[str, Any]]) -> None:
         vehicles = sum(item["is_vehicle"] for item in items)
         weapons = sum(
-            item["category"] in {"smallarms", "heavyarms", "heavyammo"} for item in items
+            item["category"] in {"small-arms", "heavy-arms", "heavy-ammunition"}
+            for item in items
         )
-        broken = [recipe for recipe in recipes if not recipe["materials"]]
+        invalid = [item for item in items if not item["api_name"] or not item["factory_cost"]]
         if len(items) < self.min_items or not recipes or not vehicles or not weapons:
             raise FoxholeDataError(
                 "FoxholeHQ dataset не прошёл проверку целостности "
                 f"(items={len(items)}, recipes={len(recipes)}, vehicles={vehicles}, weapons={weapons})"
             )
-        if len(broken) > max(5, len(recipes) // 10):
+        if invalid:
             raise FoxholeDataError(
-                f"FoxholeHQ dataset содержит слишком много пустых рецептов: {len(broken)}"
+                f"FoxholeHQ dataset содержит повреждённые позиции: {len(invalid)}"
             )
 
 
-# Old name retained for extensions that instantiated the former client.
 FoxholeAPIClient = FoxholeHQDataProvider

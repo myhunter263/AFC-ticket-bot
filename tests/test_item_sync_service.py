@@ -54,6 +54,45 @@ async def test_sync_is_noop_for_same_hash_and_preserves_local_data(db_session):
 
 
 @pytest.mark.asyncio
+async def test_source_id_change_preserves_translation_and_alias(db_session):
+    items, recipes = normalized_dataset(name="Argenti r.II Rifle")
+    items[0]["api_id"] = "foxholehq:argenti-r-ii-rifle"
+    recipes[0]["api_id"] = items[0]["api_id"]
+    if len(recipes) > 1:
+        recipes[1]["api_id"] = items[0]["api_id"]
+    await ItemSyncService.sync(db_session, 1, StaticProvider(items, recipes, "legacy-source"))
+
+    localization = (await db_session.execute(select(FoxholeItemLocalization))).scalar_one()
+    localization.ru_name = "Аргенти"
+    localization.translation_status = "translated"
+    db_session.add(FoxholeItemAlias(
+        localization_id=localization.id,
+        alias="аргенти",
+        normalized_alias="аргенти",
+    ))
+    await db_session.commit()
+
+    current_items, current_recipes = normalized_dataset(name="Argenti r.II Rifle")
+    current_items[0]["api_id"] = "foxholehq:argenti"
+    for recipe in current_recipes:
+        recipe["api_id"] = "foxholehq:argenti"
+    result = await ItemSyncService.sync(
+        db_session,
+        1,
+        StaticProvider(current_items, current_recipes, "current-source"),
+    )
+    await db_session.commit()
+
+    item = (await db_session.execute(select(FoxholeItem))).scalar_one()
+    localization = (await db_session.execute(select(FoxholeItemLocalization))).scalar_one()
+    alias = (await db_session.execute(select(FoxholeItemAlias))).scalar_one()
+    assert result.created == 0
+    assert item.api_id == "foxholehq:argenti"
+    assert localization.ru_name == "Аргенти"
+    assert alias.alias == "аргенти"
+
+
+@pytest.mark.asyncio
 async def test_seed_aliases_are_deduplicated_after_normalization(db_session):
     items = []
     recipes = []
