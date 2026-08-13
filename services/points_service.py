@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
-
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import UserPoints
@@ -68,3 +66,14 @@ class PointsService:
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    @staticmethod
+    async def delete_all(session: AsyncSession, guild_id: int) -> int:
+        result = await session.execute(
+            delete(UserPoints)
+            .where(UserPoints.guild_id == guild_id)
+            .returning(UserPoints.id)
+        )
+        deleted_ids = result.scalars().all()
+        await session.flush()
+        return len(deleted_ids)

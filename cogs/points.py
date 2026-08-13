@@ -7,6 +7,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from database.session import async_session_maker
+from services.audit_service import AuditService
 from services.points_service import PointsService
 from utils.embeds import EmbedBuilder
 from utils.permissions import PermissionChecker
@@ -69,14 +70,18 @@ class PointsCog(commands.Cog):
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(member="Пользователь", amount="Новое количество баллов")
     async def points_set(self, interaction: discord.Interaction, member: discord.Member, amount: int) -> None:
+        if not PermissionChecker.is_discord_admin(interaction):
+            await interaction.response.send_message(
+                embed=EmbedBuilder.error(
+                    "Нет доступа",
+                    "Только администраторы Discord-сервера могут устанавливать баллы.",
+                ),
+                ephemeral=True,
+            )
+            return
+
         async with async_session_maker() as session:
-            if not await PermissionChecker.is_bot_admin(interaction, session):
-                await interaction.response.send_message(
-                    embed=EmbedBuilder.error("Нет доступа", "Только администраторы могут редактировать баллы."),
-                    ephemeral=True,
-                )
-                return
-            entry = await PointsService.set_points(session, interaction.guild_id, member.id, amount)
+            await PointsService.set_points(session, interaction.guild_id, member.id, amount)
             await session.commit()
 
         embed = EmbedBuilder.success(
@@ -90,13 +95,17 @@ class PointsCog(commands.Cog):
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(member="Пользователь", amount="Баллы (отрицательное значение — списание)")
     async def points_add(self, interaction: discord.Interaction, member: discord.Member, amount: int) -> None:
+        if not PermissionChecker.is_discord_admin(interaction):
+            await interaction.response.send_message(
+                embed=EmbedBuilder.error(
+                    "Нет доступа",
+                    "Только администраторы Discord-сервера могут редактировать баллы этой командой.",
+                ),
+                ephemeral=True,
+            )
+            return
+
         async with async_session_maker() as session:
-            if not await PermissionChecker.is_bot_admin(interaction, session):
-                await interaction.response.send_message(
-                    embed=EmbedBuilder.error("Нет доступа", "Только администраторы могут редактировать баллы."),
-                    ephemeral=True,
-                )
-                return
             entry = await PointsService.award(session, interaction.guild_id, member.id, amount)
             await session.commit()
             new_total = entry.points
@@ -107,6 +116,88 @@ class PointsCog(commands.Cog):
             f"{member.mention}: **{sign}{amount}** баллов. Итого: **{new_total}**.",
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(
+        name="afc-points-reset-all",
+        description="[AFC] Удалить все баллы на сервере (Discord Admin)",
+    )
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    async def points_reset_all(self, interaction: discord.Interaction) -> None:
+        if not PermissionChecker.is_discord_admin(interaction):
+            await interaction.response.send_message(
+                embed=EmbedBuilder.error(
+                    "Нет доступа",
+                    "Только администраторы Discord-сервера могут удалить все баллы.",
+                ),
+                ephemeral=True,
+            )
+            return
+
+        view = ResetAllPointsView(interaction.guild_id, interaction.user.id)
+        await interaction.response.send_message(
+            embed=EmbedBuilder.warning(
+                "Удалить все баллы?",
+                "Будут удалены балансы и история заработанных баллов всех участников этого сервера. "
+                "Действие необратимо.",
+            ),
+            view=view,
+            ephemeral=True,
+        )
+
+
+class ResetAllPointsView(discord.ui.View):
+    def __init__(self, guild_id: int, requested_by: int) -> None:
+        super().__init__(timeout=60)
+        self.guild_id = guild_id
+        self.requested_by = requested_by
+
+    @discord.ui.button(label="Удалить все баллы", style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if (
+            interaction.user.id != self.requested_by
+            or not PermissionChecker.is_discord_admin(interaction)
+        ):
+            await interaction.response.send_message(
+                embed=EmbedBuilder.error("Нет доступа", "Подтвердить удаление может только вызвавший команду администратор."),
+                ephemeral=True,
+            )
+            return
+
+        async with async_session_maker() as session:
+            deleted_count = await PointsService.delete_all(session, self.guild_id)
+            await AuditService.log(
+                session,
+                guild_id=self.guild_id,
+                user_id=interaction.user.id,
+                user_name=str(interaction.user),
+                action="reset_all_points",
+                target_type="guild",
+                target_id=self.guild_id,
+                details={"deleted_users": deleted_count},
+            )
+            await session.commit()
+
+        await interaction.response.edit_message(
+            embed=EmbedBuilder.success(
+                "Баллы удалены",
+                f"Удалены данные о баллах для **{deleted_count}** участников.",
+            ),
+            view=None,
+        )
+
+    @discord.ui.button(label="Отмена", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if interaction.user.id != self.requested_by:
+            await interaction.response.send_message(
+                embed=EmbedBuilder.error("Нет доступа"),
+                ephemeral=True,
+            )
+            return
+        await interaction.response.edit_message(
+            embed=EmbedBuilder.info("Отменено", "Баллы не изменены."),
+            view=None,
+        )
 
 
 async def setup(bot: commands.Bot) -> None:

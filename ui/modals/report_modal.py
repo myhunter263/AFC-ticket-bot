@@ -67,6 +67,16 @@ class AwardPointsModal(discord.ui.Modal, title="Начислить баллы"):
                 ephemeral=True,
             )
             return
+        if amt <= 0:
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    title="❌ Ошибка",
+                    description="Для начисления укажите положительное число баллов.",
+                    color=0xED4245,
+                ),
+                ephemeral=True,
+            )
+            return
         await interaction.response.defer(ephemeral=True)
         await self._callback(interaction, self.target_user, amt, self.reason.value or "")
 

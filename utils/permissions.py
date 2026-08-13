@@ -12,6 +12,26 @@ from database.models import StaffRole
 class PermissionChecker:
 
     @staticmethod
+    def is_discord_admin(interaction: discord.Interaction) -> bool:
+        """Return whether the member has Discord's Administrator permission."""
+        return bool(interaction.user.guild_permissions.administrator)
+
+    @staticmethod
+    def is_ticket_author_or_discord_admin(
+        interaction: discord.Interaction,
+        ticket,
+    ) -> bool:
+        if (
+            ticket.guild_id != interaction.guild_id
+            or ticket.channel_id != interaction.channel_id
+        ):
+            return False
+        return (
+            interaction.user.id == ticket.author_id
+            or PermissionChecker.is_discord_admin(interaction)
+        )
+
+    @staticmethod
     async def is_bot_admin(
         interaction: discord.Interaction,
         session: AsyncSession,

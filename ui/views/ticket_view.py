@@ -4,11 +4,10 @@ import logging
 from typing import Optional
 
 import discord
-from sqlalchemy.orm import selectinload
 from sqlalchemy import select
 
 from config import config
-from database.models import LogSettings, NotificationSettings, StaffRole, Ticket, TicketStatus
+from database.models import StaffRole, TicketStatus
 from database.session import async_session_maker
 from services.audit_service import AuditService
 from services.points_service import PointsService
@@ -305,7 +304,7 @@ class TicketView(discord.ui.View):
             )
 
             if was_already:
-                unclaimed = await TicketService.unclaim(session, ticket, interaction.user.id)
+                await TicketService.unclaim(session, ticket, interaction.user.id)
                 await AuditService.log(
                     session,
                     guild_id=self.guild_id,
@@ -577,19 +576,15 @@ class TicketView(discord.ui.View):
                     embed=EmbedBuilder.error("Ошибка", "Заявка не найдена."), ephemeral=True
                 )
                 return
-            user_id = interaction.user.id
-            is_author = ticket.author_id == user_id
-            is_staff = await PermissionChecker.is_staff(interaction, session)
-
-        if not (is_author or is_staff):
-            await interaction.response.send_message(
-                embed=EmbedBuilder.error(
-                    "Нет доступа",
-                    "Баллы может начислять автор заявки или персонал.",
-                ),
-                ephemeral=True,
-            )
-            return
+            if not PermissionChecker.is_ticket_author_or_discord_admin(interaction, ticket):
+                await interaction.response.send_message(
+                    embed=EmbedBuilder.error(
+                        "Нет доступа",
+                        "Баллы может начислять только автор заявки или администратор Discord-сервера.",
+                    ),
+                    ephemeral=True,
+                )
+                return
 
         view = AwardSelectView(self.ticket_id, self.guild_id)
         await interaction.response.send_message(
@@ -604,9 +599,19 @@ class TicketView(discord.ui.View):
     @discord.ui.button(label="Удалить", style=discord.ButtonStyle.danger, emoji="🗑️", row=3, custom_id="tv:delete")
     async def delete_ticket(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         async with async_session_maker() as session:
-            if not await PermissionChecker.is_bot_admin(interaction, session):
+            ticket = await TicketService.get_by_id(session, self.ticket_id)
+            if not ticket:
                 await interaction.response.send_message(
-                    embed=EmbedBuilder.error("Нет доступа", "Только администраторы могут удалять заявки."),
+                    embed=EmbedBuilder.error("Ошибка", "Заявка не найдена."),
+                    ephemeral=True,
+                )
+                return
+            if not PermissionChecker.is_ticket_author_or_discord_admin(interaction, ticket):
+                await interaction.response.send_message(
+                    embed=EmbedBuilder.error(
+                        "Нет доступа",
+                        "Удалить заявку может только её автор или администратор Discord-сервера.",
+                    ),
                     ephemeral=True,
                 )
                 return
@@ -634,12 +639,34 @@ class AwardSelectView(discord.ui.View):
         self._user_select = user_select
 
     async def _select_user(self, interaction: discord.Interaction) -> None:
+        async with async_session_maker() as session:
+            ticket = await TicketService.get_by_id(session, self.ticket_id)
+            if not ticket or not PermissionChecker.is_ticket_author_or_discord_admin(interaction, ticket):
+                await interaction.response.send_message(
+                    embed=EmbedBuilder.error("Нет доступа", "У вас больше нет права начислять баллы в этой заявке."),
+                    ephemeral=True,
+                )
+                return
+
         target = self._user_select.values[0]
         ticket_id = self.ticket_id
         guild_id = self.guild_id
 
         async def _on_award(inter: discord.Interaction, user: discord.Member, amount: int, reason: str) -> None:
+            if amount <= 0:
+                await inter.followup.send(
+                    embed=EmbedBuilder.error("Ошибка", "Для начисления укажите положительное число баллов."),
+                    ephemeral=True,
+                )
+                return
             async with async_session_maker() as session:
+                ticket = await TicketService.get_by_id(session, ticket_id)
+                if not ticket or not PermissionChecker.is_ticket_author_or_discord_admin(inter, ticket):
+                    await inter.followup.send(
+                        embed=EmbedBuilder.error("Нет доступа", "У вас больше нет права начислять баллы в этой заявке."),
+                        ephemeral=True,
+                    )
+                    return
                 entry = await PointsService.award(session, guild_id, user.id, amount)
                 await AuditService.log(
                     session,
@@ -870,6 +897,18 @@ class ConfirmDeleteTicketView(discord.ui.View):
 
     @discord.ui.button(label="Удалить канал", style=discord.ButtonStyle.danger)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        async with async_session_maker() as session:
+            ticket = await TicketService.get_by_id(session, self.ticket_id)
+            if not ticket or not PermissionChecker.is_ticket_author_or_discord_admin(interaction, ticket):
+                await interaction.response.send_message(
+                    embed=EmbedBuilder.error(
+                        "Нет доступа",
+                        "Удалить заявку может только её автор или администратор Discord-сервера.",
+                    ),
+                    ephemeral=True,
+                )
+                return
+
         await interaction.response.defer(ephemeral=True)
         channel = interaction.channel
         try:
