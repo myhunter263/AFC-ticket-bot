@@ -39,6 +39,9 @@ def _page(*items: str, version: int = 65) -> str:
     )
 
 
+_SCRIPT = "const crateSizes={bmats:100,rmats:20,epowders:40,hepowders:30};"
+
+
 def test_provider_parses_patch_65_factory_page():
     provider = FoxholeHQDataProvider(base_url="https://example.test", min_items=2)
     dataset = provider.parse_page(
@@ -54,13 +57,20 @@ def test_provider_parses_patch_65_factory_page():
                 cost=495,
                 methods="",
             ),
-        )
+        ),
+        _SCRIPT,
     )
 
     assert dataset.source_version == "Patch 65"
     assert dataset.source_updated_at == datetime.datetime(2026, 7, 8)
     assert len(dataset.items) == 2
     assert dataset.categories == ["small-arms", "vehicles"]
+    assert dataset.resource_crate_sizes == {
+        "bmat": 100,
+        "rmat": 20,
+        "emat": 40,
+        "hemat": 30,
+    }
     rifle = next(item for item in dataset.items if item["upstream_key"] == "argenti")
     assert rifle["api_id"] == "foxholehq:argenti"
     assert rifle["faction"] == "colonial"
@@ -72,7 +82,7 @@ def test_provider_rejects_page_without_version_or_required_catalog_sections():
     with pytest.raises(FoxholeDataError, match="версию"):
         provider.parse_page(_item("argenti", "Argenti"))
     with pytest.raises(FoxholeDataError, match="целостности"):
-        provider.parse_page(_page(_item("argenti", "Argenti")))
+        provider.parse_page(_page(_item("argenti", "Argenti")), _SCRIPT)
 
 
 def test_provider_normalizes_vehicle_factory_and_mpf_costs():
@@ -89,7 +99,9 @@ def test_provider_normalizes_vehicle_factory_and_mpf_costs():
         ),
         _item("argenti", "Argenti"),
     )
-    dataset = FoxholeHQDataProvider(base_url="https://example.test", min_items=2).parse_page(page)
+    dataset = FoxholeHQDataProvider(base_url="https://example.test", min_items=2).parse_page(
+        page, _SCRIPT
+    )
     tank = next(item for item in dataset.items if item["upstream_key"] == "bardiche")
     tank_recipes = [row for row in dataset.recipes if row["api_id"] == tank["api_id"]]
     assert tank["factory_cost"] == {"rmat": 165}

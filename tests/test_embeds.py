@@ -44,6 +44,7 @@ def test_normalized_order_replaces_raw_text_in_main_ticket_embed():
             "factory_site": "Garage",
             "mpf": {"rmat": 1619},
             "mpf_crates": 5,
+            "resource_crate_sizes": {"rmat": 20},
         },
     }]
 
@@ -70,5 +71,5 @@ def test_normalized_order_replaces_raw_text_in_main_ticket_embed():
     rendered = "\n".join(field.value for field in embed.fields)
     assert "15 фальшионов" not in rendered
     assert "Фальшион" in rendered
-    assert "135 RMat в гараже за шт." in rendered
-    assert "1 619 RMat на MPF за 5 ящиков" in rendered
+    assert "135 RMat или 6 ящиков + 15 RMat в гараже за шт." in rendered
+    assert "1 619 RMat или 80 ящиков + 19 RMat на MPF за 5 ящиков техники" in rendered

@@ -1,0 +1,56 @@
+[
+  {"api_id":"foxholehq-resource:bmat","api_name":"Basic Materials","ru_name":"Биматы","alias_type":"slang","priority":120,"aliases":["бимат","биматы","биматов","бимата","бим","бм","бматы","bmat","bmats","basic material","basic materials"]},
+  {"api_id":"foxholehq-resource:rmat","api_name":"Refined Materials","ru_name":"Рматы","alias_type":"slang","priority":120,"aliases":["рмат","рматы","рматов","рм","рематы","ремат","rmat","rmats","refined materials"]},
+  {"api_id":"foxholehq-resource:emat","api_name":"Explosive Powder","ru_name":"Ематы","alias_type":"slang","priority":120,"aliases":["емат","ематы","ематов","эмат","эматы","emat","emats","epowder","explosive powder","explosive materials"]},
+  {"api_id":"foxholehq-resource:hemat","api_name":"Heavy Explosive Powder","ru_name":"Хематы","alias_type":"slang","priority":120,"aliases":["хемат","хематы","хематов","хэмат","хэматы","hemat","hemats","hepowder","heavy explosive powder","heavy explosive materials"]},
+
+  {"api_id":"foxholehq:soldiersupplies","api_name":"Soldier Supplies","ru_name":"Рубашки","alias_type":"slang","priority":115,"aliases":["рубашка","рубашки","рубахи","рубаха","рубашек","ширты","ширт","shirts","shirt","ss","soldier supplies"]},
+  {"api_id":"foxholehq:bandages","api_name":"Bandages","ru_name":"Бинты","alias_type":"slang","priority":115,"aliases":["бинт","бинты","бинтов","бинтики","бинтовки","bandage","bandages"]},
+  {"api_id":"foxholehq:traumakit","api_name":"Trauma Kit","ru_name":"Травма-кит","alias_type":"translation","priority":110,"aliases":["травма","травмакит","травма кит","травма-кит","trauma","trauma kit"]},
+  {"api_id":"foxholehq:firstaidkit","api_name":"First Aid Kit","ru_name":"Аптечка","alias_type":"slang","priority":110,"aliases":["аптечка","аптечки","медкит","мед кит","first aid","first aid kit"]},
+  {"api_id":"foxholehq:bloodplasma","api_name":"Blood Plasma","ru_name":"Плазма крови","alias_type":"translation","priority":105,"aliases":["плазма","плазма крови","кровь","blood plasma"]},
+
+  {"api_id":"foxholehq:argenti","api_name":"Argenti r.II Rifle","ru_name":"Аргенти","alias_type":"slang","priority":115,"aliases":["аргенти","аргентя","аргентей","аргенти винтовка","арг","argenti"]},
+  {"api_id":"foxholehq:762mm","api_name":"7.62mm","ru_name":"Патроны 7.62 мм","alias_type":"caliber","priority":120,"aliases":["7.62","762","7 62","7,62","7.62мм","7.62 мм","762мм","762 мм","патроны 762","патрики 762","патроны 7.62","762 патроны"]},
+  {"api_id":"foxholehq:9mm","api_name":"9mm","ru_name":"Патроны 9 мм","alias_type":"caliber","priority":115,"aliases":["9","9мм","9 мм","9mm","патроны 9","девятка"]},
+  {"api_id":"foxholehq:127mm","api_name":"12.7mm","ru_name":"Патроны 12.7 мм","alias_type":"caliber","priority":115,"aliases":["12.7","127","12 7","12,7","12.7мм","127мм","патроны 127"]},
+  {"api_id":"foxholehq:20mm","api_name":"20mm","ru_name":"20 мм","alias_type":"caliber","priority":115,"aliases":["20","20мм","20 мм","20mm","двадцатки"]},
+  {"api_id":"foxholehq:30mm","api_name":"30mm","ru_name":"30 мм","alias_type":"caliber","priority":115,"aliases":["30","30мм","30 мм","30mm","тридцатки"]},
+  {"api_id":"foxholehq:40mm","api_name":"40mm","ru_name":"40 мм","alias_type":"caliber","priority":115,"aliases":["40","40мм","40 мм","40mm","сороковки","40ки"]},
+  {"api_id":"foxholehq:68mm","api_name":"68mm","ru_name":"68 мм","alias_type":"caliber","priority":115,"aliases":["68","68мм","68 мм","68mm","шестьдесят восьмые"]},
+  {"api_id":"foxholehq:120mm","api_name":"120mm","ru_name":"120 мм","alias_type":"caliber","priority":115,"aliases":["120","120мм","120 мм","120mm","сто двадцатки"]},
+  {"api_id":"foxholehq:150mm","api_name":"150mm","ru_name":"150 мм","alias_type":"caliber","priority":115,"aliases":["150","150мм","150 мм","150mm","сто пятидесятки"]},
+
+  {"api_id":"foxholehq:tremola","api_name":"Tremola Grenade GPb-1","ru_name":"Тремола","alias_type":"slang","priority":115,"aliases":["тремола","тремолы","тремол","трем","тремки","tremola","tremolas"]},
+  {"api_id":"foxholehq:lunaire","api_name":"KLG901-2 Lunaire F","ru_name":"Лунайр","alias_type":"slang","priority":110,"aliases":["лунайр","лунаир","лунайры","лунар","луна","луны","lunaire"]},
+  {"api_id":"foxholehq:bomastone","api_name":"Bomastone Grenade","ru_name":"Бомастоун","alias_type":"slang","priority":105,"aliases":["бомастоун","бома","бомы","бомастоны","bomastone"]},
+  {"api_id":"foxholehq:harpa","api_name":"A3 Harpa Fragmentation Grenade","ru_name":"Гарпа","alias_type":"slang","priority":105,"aliases":["гарпа","харпа","гарпы","харпы","harpa"]},
+  {"api_id":"foxholehq:greenash","api_name":"Green Ash Grenade","ru_name":"Зелёный пепел","alias_type":"slang","priority":105,"aliases":["зеленый пепел","газовая граната","газ граната","газка","green ash"]},
+  {"api_id":"foxholehq:mammon","api_name":"Mammon 91-b","ru_name":"Маммон","alias_type":"slang","priority":105,"aliases":["маммон","мамоны","маммоны","mammon"]},
+  {"api_id":"foxholehq:stickybomb","api_name":"Anti-Tank Sticky Bomb","ru_name":"Липучка","alias_type":"slang","priority":110,"aliases":["липучка","липучки","стики","стики бомба","sticky","sticky bomb"]},
+
+  {"api_id":"foxholehq:falchion","api_name":"85K-b \"Falchion\"","ru_name":"Фальшион","alias_type":"slang","priority":120,"aliases":["фальшион","фальшионы","фальшиона","фальшионов","фальш","фальшик","фальши","фальшев","falchion"]},
+  {"api_id":"foxholehq:bardiche","api_name":"86K-a \"Bardiche\"","ru_name":"Бардиш","alias_type":"slang","priority":120,"aliases":["бардиш","бардиша","бардишей","бардич","бардичей","бердыш","бердыши","бердышей","бард","bardiche"]},
+  {"api_id":"foxholehq:hatchet","api_name":"H-5 \"Hatchet\"","ru_name":"Хэтчет","alias_type":"transliteration","priority":105,"aliases":["хэтчет","хетчет","хатчет","hatchet"]},
+  {"api_id":"foxholehq:devittmk3","api_name":"Devitt Mk. III","ru_name":"Девитт","alias_type":"transliteration","priority":105,"aliases":["девитт","девит","devitt"]},
+  {"api_id":"foxholehq:silverhand","api_name":"Silverhand - Mk. IV","ru_name":"Сильверхенд","alias_type":"slang","priority":110,"aliases":["сильверхенд","силверхенд","свх","silverhand"]},
+  {"api_id":"foxholehq:scorpion","api_name":"HC-2 \"Scorpion\"","ru_name":"Скорпион","alias_type":"transliteration","priority":105,"aliases":["скорпион","скорп","scorpion"]},
+
+  {"api_id":"foxholehq:wrench","api_name":"Wrench","ru_name":"Гаечный ключ","alias_type":"slang","priority":105,"aliases":["ключ","гаечный ключ","врэнч","wrench"]},
+  {"api_id":"foxholehq:shovel","api_name":"Shovel","ru_name":"Лопата","alias_type":"translation","priority":105,"aliases":["лопата","лопаты","шовел","shovel"]},
+  {"api_id":"foxholehq:sledgehammer","api_name":"Sledge Hammer","ru_name":"Кувалда","alias_type":"slang","priority":105,"aliases":["кувалда","кувалды","следж","sledge","sledgehammer"]},
+  {"api_id":"foxholehq:gasmask","api_name":"Gas Mask","ru_name":"Противогаз","alias_type":"translation","priority":105,"aliases":["противогаз","газ маска","гасмаска","gasmask","gas mask"]},
+  {"api_id":"foxholehq:gasmaskfilter","api_name":"Gas Mask Filter","ru_name":"Фильтр противогаза","alias_type":"translation","priority":105,"aliases":["фильтр","фильтры","фильтр противогаза","gasmask filter"]},
+  {"api_id":"foxholehq:radio","api_name":"Radio","ru_name":"Радио","alias_type":"translation","priority":105,"aliases":["радио","рация","радейка","radio"]},
+  {"api_id":"foxholehq:maintenancesupplies","api_name":"Maintenance Supplies","ru_name":"МСапы","alias_type":"slang","priority":110,"aliases":["мсапы","м сапы","майнтенанс","maintenance supplies","msups"]},
+
+  {"api_id":"foxholehq:r1hauler","api_name":"R-1 Hauler","ru_name":"Хаулер","alias_type":"transliteration","priority":105,"aliases":["хаулер","р1","r1","r-1","hauler"]},
+  {"api_id":"foxholehq:flatbed","api_name":"BMS - Packmule Flatbed","ru_name":"Флэтбед","alias_type":"slang","priority":110,"aliases":["флэтбед","флетбед","флэт","флет","flatbed"]},
+  {"api_id":"foxholehq:crane","api_name":"BMS - Class 2 Mobile Auto-Crane","ru_name":"Кран","alias_type":"translation","priority":105,"aliases":["кран","автокран","мобильный кран","crane"]},
+  {"api_id":"foxholehq:ironship","api_name":"BMS - Ironship","ru_name":"Баржа","alias_type":"slang","priority":110,"aliases":["баржа","баржи","айроншип","ironship"]},
+
+  {"api_id":"foxholehq:cutler","api_name":"Cutler Launcher 4","ru_name":"Катлер","alias_type":"transliteration","priority":105,"aliases":["катлер","катлары","cutler"]},
+  {"api_id":"foxholehq:venom","api_name":"Venom c.II 35","ru_name":"Веном","alias_type":"transliteration","priority":105,"aliases":["веном","веномы","venom"]},
+  {"api_id":"foxholehq:bane","api_name":"Bane 45","ru_name":"Бейн","alias_type":"transliteration","priority":105,"aliases":["бейн","бейны","bane"]},
+  {"api_id":"foxholehq:ignifist","api_name":"Ignifist 30","ru_name":"Игнифист","alias_type":"transliteration","priority":105,"aliases":["игнифист","игни","ignifist"]}
+]

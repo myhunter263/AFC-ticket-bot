@@ -102,6 +102,7 @@ class OrderPreviewService:
                         if hasattr(row.resolved.item.synced_at, "isoformat")
                         else row.resolved.item.synced_at
                     ),
+                    "resource_crate_sizes": row.resolved.item.resource_crate_sizes,
                 },
             }
             for row in order.items

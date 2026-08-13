@@ -37,7 +37,8 @@ class ItemResolver:
                 for text in getter(item):
                     candidate = TextNormalizer.normalize(text)
                     if normalized == candidate or compact == TextNormalizer.compact(text):
-                        return ResolvedItem(item, 100, matched_by, text, False)
+                        source = "exact_alias" if matched_by == "alias" else matched_by
+                        return ResolvedItem(item, 100, source, text, False)
 
         scored: dict[str, ResolvedItem] = {}
         fuzzy_groups = (
@@ -49,7 +50,11 @@ class ItemResolver:
             for item in self.items:
                 for text in getter(item):
                     candidate = TextNormalizer.normalize(text)
-                    score = min(100, round(fuzz.WRatio(normalized, candidate) + bonus))
+                    priority_bonus = 0
+                    if matched_by == "fuzzy_alias":
+                        metadata = item.alias_metadata.get(candidate, {})
+                        priority_bonus = max(-8, min(8, (int(metadata.get("priority", 100)) - 100) // 10))
+                    score = min(100, round(fuzz.WRatio(normalized, candidate) + bonus + priority_bonus))
                     current = scored.get(item.api_id)
                     if current is None or score > current.confidence:
                         scored[item.api_id] = ResolvedItem(
@@ -73,3 +78,22 @@ class ItemResolver:
 
         logger.warning("Unknown Foxhole item query: %r", query)
         return ResolvedItemCandidates(query=query, candidates=candidates[:5])
+
+    def debug(self, query: str) -> dict:
+        normalized = TextNormalizer.normalize(query)
+        result = self.resolve(query)
+        candidates = result.candidates if isinstance(result, ResolvedItemCandidates) else [result]
+        return {
+            "input": query,
+            "normalized": normalized,
+            "matched": None if isinstance(result, ResolvedItemCandidates) else result,
+            "source": (
+                "database_alias"
+                if not isinstance(result, ResolvedItemCandidates)
+                and result.matched_by == "exact_alias"
+                else result.matched_by
+                if not isinstance(result, ResolvedItemCandidates)
+                else "candidates"
+            ),
+            "candidates": candidates[:5],
+        }

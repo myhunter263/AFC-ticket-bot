@@ -20,7 +20,8 @@ PostgreSQL и Docker Compose.
 
 ```text
 Фальшион — 15 шт.
-(135 RMat в гараже за шт. / 1 619 RMat на MPF за 5 ящиков)
+(135 RMat или 6 ящиков + 15 RMat в гараже за шт. /
+1 619 RMat или 80 ящиков + 19 RMat на MPF за 5 ящиков техники)
 ```
 
 Структурированные позиции и ценовые snapshots используются повторно при каждом
@@ -54,6 +55,10 @@ PostgreSQL и Docker Compose.
 /afc-item-alias-remove
 /afc-item-rename
 /afc-item-override
+/afc-item-debug
+/afc-unknown-aliases
+/afc-dictionary-export
+/afc-dictionary-import
 ```
 
 `/afc-item-override` вручную исправляет категорию, цену, производственное здание,
@@ -72,6 +77,7 @@ FoxholeHQ. У сайта нет публичного API каталога: св�
 FOXHOLEHQ_BASE_URL=https://foxholehq.net
 FOXHOLEHQ_SYNC_INTERVAL_HOURS=24
 FOXHOLEHQ_MIN_ITEMS=100
+FOXHOLE_RESOURCE_COST_DISPLAY=both
 ```
 
 Синхронизация скачивает dataset, проверяет заявленную версию и

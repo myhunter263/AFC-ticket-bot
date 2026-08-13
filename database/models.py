@@ -43,6 +43,9 @@ class Guild(Base):
     foxhole_localizations: Mapped[List["FoxholeItemLocalization"]] = relationship(
         back_populates="guild", cascade="all, delete-orphan"
     )
+    unknown_item_queries: Mapped[List["UnknownItemQuery"]] = relationship(
+        back_populates="guild", cascade="all, delete-orphan"
+    )
     notification_settings: Mapped[Optional["NotificationSettings"]] = relationship(
         back_populates="guild", cascade="all, delete-orphan", uselist=False
     )
@@ -372,6 +375,8 @@ class FoxholeItemAlias(Base):
     )
     alias: Mapped[str] = mapped_column(String(200))
     normalized_alias: Mapped[str] = mapped_column(String(200), index=True)
+    alias_type: Mapped[str] = mapped_column(String(30), default="custom")
+    priority: Mapped[int] = mapped_column(Integer, default=100)
     created_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
 
@@ -379,6 +384,47 @@ class FoxholeItemAlias(Base):
 
     __table_args__ = (
         UniqueConstraint("localization_id", "normalized_alias", name="uq_foxhole_alias"),
+    )
+
+
+class FoxholeResource(Base):
+    __tablename__ = "foxhole_resources"
+
+    resource_key: Mapped[str] = mapped_column(String(30), primary_key=True)
+    api_name: Mapped[str] = mapped_column(String(100))
+    crate_size: Mapped[int] = mapped_column(Integer)
+    source: Mapped[str] = mapped_column(String(50), default="foxholehq")
+    source_version: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    raw_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    synced_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class FoxholeSeedState(Base):
+    __tablename__ = "foxhole_seed_states"
+
+    guild_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("guilds.id", ondelete="CASCADE"), primary_key=True
+    )
+    seed_version: Mapped[int] = mapped_column(Integer, default=0)
+    applied_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class UnknownItemQuery(Base):
+    __tablename__ = "unknown_item_queries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("guilds.id", ondelete="CASCADE")
+    )
+    raw_query: Mapped[str] = mapped_column(String(300))
+    normalized_query: Mapped[str] = mapped_column(String(300), index=True)
+    count: Mapped[int] = mapped_column(Integer, default=1)
+    last_seen_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    guild: Mapped["Guild"] = relationship(back_populates="unknown_item_queries")
+
+    __table_args__ = (
+        UniqueConstraint("guild_id", "normalized_query", name="uq_unknown_item_query"),
     )
 
 

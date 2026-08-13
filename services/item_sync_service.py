@@ -12,6 +12,7 @@ from database.models import (
     FoxholeItem,
     FoxholeItemLocalization,
     FoxholeProductionRecipe,
+    FoxholeResource,
     FoxholeSyncState,
 )
 from services.foxhole_api import FoxholeDataError, FoxholeDataProvider, FoxholeHQDataProvider
@@ -60,6 +61,7 @@ class ItemSyncService:
         if state.dataset_hash == dataset.dataset_hash:
             state.last_success_at = now
             state.last_error = None
+            await cls._sync_resources(session, dataset, now)
             await cls._ensure_localizations(session, guild_id)
             untranslated = await cls._untranslated_count(session, guild_id)
             await session.flush()
@@ -151,6 +153,8 @@ class ItemSyncService:
                 raw_data=recipe.get("raw_data"),
             ))
 
+        await cls._sync_resources(session, dataset, now)
+
         await cls._ensure_localizations(session, guild_id)
         untranslated = await cls._untranslated_count(session, guild_id)
         state.source_version = dataset.source_version
@@ -180,6 +184,52 @@ class ItemSyncService:
         )
 
     @classmethod
+    async def _sync_resources(cls, session, dataset, now: datetime.datetime) -> None:
+        names = {
+            "bmat": "Basic Materials",
+            "rmat": "Refined Materials",
+            "emat": "Explosive Powder",
+            "hemat": "Heavy Explosive Powder",
+        }
+        for key, crate_size in (dataset.resource_crate_sizes or {}).items():
+            resource = await session.get(FoxholeResource, key)
+            if resource is None:
+                resource = FoxholeResource(resource_key=key, api_name=names[key], crate_size=crate_size)
+                session.add(resource)
+            resource.api_name = names[key]
+            resource.crate_size = crate_size
+            resource.source = cls.SOURCE
+            resource.source_version = dataset.source_version
+            resource.raw_data = {"crate_size": crate_size, "source": "factory calculator script"}
+            resource.synced_at = now
+
+            api_id = f"foxholehq-resource:{key}"
+            item = (await session.execute(
+                select(FoxholeItem).where(FoxholeItem.api_id == api_id)
+            )).scalar_one_or_none()
+            if item is None:
+                item = FoxholeItem(api_id=api_id, api_name=names[key])
+                session.add(item)
+            item.api_name = names[key]
+            item.category = "resource"
+            item.is_vehicle = False
+            item.crate_size = crate_size
+            item.amount_produced = crate_size
+            item.vehicle_crate_size = 1
+            item.factory_site = None
+            item.factory_cost = {}
+            item.mpf_available = False
+            item.mpf_max_crates = 9
+            item.source = "foxholehq-resource"
+            item.source_version = dataset.source_version
+            item.source_updated_at = dataset.source_updated_at
+            item.dataset_hash = dataset.dataset_hash
+            item.is_active = True
+            item.raw_data = {"resource_key": key, "crate_size": crate_size}
+            item.synced_at = now
+        await session.flush()
+
+    @classmethod
     async def status(cls, session: AsyncSession, guild_id: int) -> dict:
         state = await cls._state(session)
         return {
@@ -193,6 +243,9 @@ class ItemSyncService:
             "item_count": state.item_count,
             "recipe_count": state.recipe_count,
             "untranslated": await cls._untranslated_count(session, guild_id),
+            "resource_count": len((await session.execute(
+                select(FoxholeResource.resource_key)
+            )).scalars().all()),
         }
 
     @classmethod

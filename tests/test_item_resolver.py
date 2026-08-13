@@ -1,5 +1,6 @@
 from services.foxhole_types import ResolvedItem
 from services.item_resolver import ItemResolver
+from services.foxhole_types import CatalogItem
 
 
 def test_resolves_russian_aliases_typos_and_api_name(catalog):
@@ -26,3 +27,41 @@ def test_resolves_russian_aliases_typos_and_api_name(catalog):
 def test_low_confidence_returns_candidates(catalog):
     result = ItemResolver(catalog).resolve("совершенно неизвестный предмет")
     assert not isinstance(result, ResolvedItem)
+
+
+def test_seeded_core_slang_is_exact(catalog):
+    resolver = ItemResolver(catalog)
+    expected = {
+        "биматы": "Биматы",
+        "рматы": "Рматы",
+        "ематы": "Ематы",
+        "хематы": "Хематы",
+        "бинты": "Бинты",
+        "рубашки": "Рубашки",
+    }
+    for query, ru_name in expected.items():
+        result = resolver.resolve(query)
+        assert isinstance(result, ResolvedItem)
+        assert result.item.ru_name == ru_name
+        assert result.confidence == 100
+        assert result.matched_by == "exact_alias"
+
+
+def test_exact_database_alias_has_priority_and_debug_metadata():
+    item = CatalogItem(
+        id=1,
+        api_id="db-item",
+        api_name="Database Item",
+        ru_name="Предмет",
+        aliases=["тестовыйжаргон"],
+        alias_metadata={
+            "тестовыйжаргон": {"alias_type": "custom", "priority": 150}
+        },
+    )
+    resolver = ItemResolver([item])
+    result = resolver.resolve("  ТЕСТОВЫЙЖАРГОН ")
+    assert isinstance(result, ResolvedItem)
+    assert result.confidence == 100
+    assert result.matched_by == "exact_alias"
+    assert resolver.debug("тестовыйжаргон")["source"] == "database_alias"
+    assert resolver.debug("тестовыйжаргон")["normalized"] == "тестовыйжаргон"

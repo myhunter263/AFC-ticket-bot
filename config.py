@@ -46,6 +46,7 @@ class Config:
         "emat": os.getenv("FOXHOLE_RESOURCE_EMAT", "EMat"),
         "hemat": os.getenv("FOXHOLE_RESOURCE_HEMAT", "HEMat"),
     }
+    FOXHOLE_RESOURCE_COST_DISPLAY: str = os.getenv("FOXHOLE_RESOURCE_COST_DISPLAY", "both")
 
     # Colors
     COLOR_PRIMARY: int = 0x5865F2

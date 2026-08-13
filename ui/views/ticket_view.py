@@ -15,6 +15,7 @@ from services.status_service import StatusService
 from services.ticket_service import TicketService
 from services.item_catalog_service import ItemCatalogService
 from services.order_preview_service import OrderPreviewService
+from services.unknown_query_service import UnknownQueryService
 from ui.modals.ticket_modal import TicketCreateModal
 from ui.modals.report_modal import ReportModal
 from utils.auto_delete import respond_and_delete, schedule_delete
@@ -435,6 +436,13 @@ async def _show_order_preview(
 
     service = OrderPreviewService(catalog)
     order = service.parse(order_text)
+    if order.unresolved:
+        async with async_session_maker() as session:
+            for unresolved in order.unresolved:
+                await UnknownQueryService.record(
+                    session, interaction.guild_id, unresolved.line.query
+                )
+            await session.commit()
     if not order.items and not order.unresolved:
         await interaction.edit_original_response(
             embed=EmbedBuilder.error(

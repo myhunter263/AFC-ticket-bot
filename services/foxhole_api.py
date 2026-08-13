@@ -33,6 +33,7 @@ class FoxholeDataset:
     source_version: str
     source_updated_at: datetime.datetime | None
     dataset_hash: str
+    resource_crate_sizes: dict[str, int] | None = None
 
 
 class FoxholeDataProvider(abc.ABC):
@@ -94,6 +95,11 @@ class FoxholeHQDataProvider(FoxholeDataProvider):
         "epowders": "emat",
         "hepowders": "hemat",
     }
+    _SCRIPT = re.compile(r'src=["\']([^"\']*assets/js/scripts[^"\']+[.]js)["\']', re.IGNORECASE)
+    _RESOURCE_CRATES = re.compile(
+        r"\{\s*bmats\s*:\s*(\d+)\s*,\s*rmats\s*:\s*(\d+)\s*,\s*"
+        r"epowders\s*:\s*(\d+)\s*,\s*hepowders\s*:\s*(\d+)\s*\}"
+    )
 
     def __init__(self, base_url: str | None = None, min_items: int | None = None) -> None:
         self.base_url = (
@@ -111,18 +117,28 @@ class FoxholeHQDataProvider(FoxholeDataProvider):
                 async with session.get(f"{self.base_url}{self.FACTORY_PATH}") as response:
                     response.raise_for_status()
                     page = await response.text()
+                script_match = self._SCRIPT.search(page)
+                if not script_match:
+                    raise FoxholeDataError("FoxholeHQ не указал скрипт с размерами ящиков ресурсов")
+                script_url = script_match.group(1)
+                if not script_url.startswith("http"):
+                    script_url = f"{self.base_url}/{script_url.lstrip('/')}"
+                async with session.get(script_url) as response:
+                    response.raise_for_status()
+                    script = await response.text()
         except (aiohttp.ClientError, TimeoutError, UnicodeError) as exc:
             raise FoxholeDataError(f"FoxholeHQ недоступен: {exc}") from exc
-        return self.parse_page(page)
+        return self.parse_page(page, script)
 
-    def parse_page(self, page: str) -> FoxholeDataset:
+    def parse_page(self, page: str, script: str = "") -> FoxholeDataset:
         parser = _FactoryPageParser()
         parser.feed(page)
         version, updated_at = self._parse_version(page)
+        resource_crate_sizes = self._parse_resource_crates(script)
         items, recipes = self._normalize(parser.items, version, updated_at)
         self._validate(items, recipes)
         canonical = json.dumps(
-            {"items": items, "recipes": recipes},
+            {"items": items, "recipes": recipes, "resource_crate_sizes": resource_crate_sizes},
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
@@ -134,7 +150,15 @@ class FoxholeHQDataProvider(FoxholeDataProvider):
             source_version=version,
             source_updated_at=updated_at,
             dataset_hash=hashlib.sha256(canonical.encode()).hexdigest(),
+            resource_crate_sizes=resource_crate_sizes,
         )
+
+    @classmethod
+    def _parse_resource_crates(cls, script: str) -> dict[str, int]:
+        match = cls._RESOURCE_CRATES.search(script)
+        if not match:
+            raise FoxholeDataError("FoxholeHQ не предоставил размеры ящиков ресурсов")
+        return dict(zip(("bmat", "rmat", "emat", "hemat"), map(int, match.groups())))
 
     @classmethod
     def _parse_version(cls, page: str) -> tuple[str, datetime.datetime | None]:

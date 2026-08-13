@@ -4,21 +4,18 @@ from typing import Any
 
 from config import config
 from services.foxhole_types import OrderItem, ParsedOrder
+from services.resource_cost_formatter import ResourceCostFormatter
 
 
 class NormalizedOrderBuilder:
     """Builds user-facing order text from resolved items or stored snapshots."""
 
     @staticmethod
-    def resources(cost: dict[str, int] | None) -> str:
-        if not cost:
-            return "недоступно"
-        return ", ".join(
-            f"{amount:,} {config.FOXHOLE_RESOURCE_LABELS.get(resource, resource.upper())}".replace(
-                ",", " "
-            )
-            for resource, amount in cost.items()
-        )
+    def resources(cost: dict[str, int] | None, crate_sizes: dict[str, int]) -> str:
+        return ResourceCostFormatter(
+            crate_sizes,
+            config.FOXHOLE_RESOURCE_COST_DISPLAY,
+        ).materials(cost)
 
     @staticmethod
     def site_ru(site: str | None) -> str:
@@ -32,12 +29,14 @@ class NormalizedOrderBuilder:
     def format_item(self, order_item: OrderItem, *, preview: bool = False) -> str:
         item = order_item.resolved.item
         unit = "шт." if item.is_vehicle else "ящиков"
-        standard = self.resources(order_item.factory_cost)
+        standard = self.resources(order_item.factory_cost, item.resource_crate_sizes)
         preposition = "в" if item.is_vehicle else "на"
         suffix = " за шт." if item.is_vehicle else " за ящик"
         standard_text = f"{standard} {preposition} {self.site_ru(item.factory_site)}{suffix}"
         mpf_text = (
-            f"{self.resources(order_item.mpf_cost)} на MPF за {order_item.mpf_crates} ящиков"
+            f"{self.resources(order_item.mpf_cost, item.resource_crate_sizes)} "
+            f"на MPF за {order_item.mpf_crates} ящиков"
+            f"{' техники' if item.is_vehicle else ''}"
             if order_item.mpf_cost
             else "MPF недоступно"
         )
@@ -69,13 +68,15 @@ class NormalizedOrderBuilder:
 
         is_vehicle = unit == "item"
         unit_label = "шт." if is_vehicle else "ящиков"
-        standard = self.resources(snapshot.get("factory"))
+        crate_sizes = snapshot.get("resource_crate_sizes") or {}
+        standard = self.resources(snapshot.get("factory"), crate_sizes)
         site = self.site_ru(snapshot.get("factory_site"))
         preposition = "в" if is_vehicle else "на"
         suffix = " за шт." if is_vehicle else " за ящик"
         mpf_crates = snapshot.get("mpf_crates", 0)
         mpf_text = (
-            f"{self.resources(snapshot.get('mpf'))} на MPF за {mpf_crates} ящиков"
+            f"{self.resources(snapshot.get('mpf'), crate_sizes)} на MPF за {mpf_crates} "
+            f"ящиков{' техники' if is_vehicle else ''}"
             if mpf_crates
             else "MPF недоступно"
         )

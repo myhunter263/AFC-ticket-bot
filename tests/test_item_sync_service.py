@@ -16,6 +16,8 @@ from database.models import (
 )
 from services.item_sync_service import ItemSyncService
 from services.item_catalog_service import ItemCatalogService
+from services.item_resolver import ItemResolver
+from services.foxhole_types import ResolvedItem
 from tests.test_foxholehq_provider import StaticProvider, normalized_dataset
 
 
@@ -180,3 +182,31 @@ async def test_ticket_snapshot_does_not_change_after_catalog_sync(db_session):
     )
     order_item = (await db_session.execute(select(TicketOrderItem))).scalar_one()
     assert order_item.cost_snapshot == snapshot
+
+
+@pytest.mark.asyncio
+async def test_new_database_alias_is_visible_without_bot_restart(db_session):
+    items, recipes = normalized_dataset(name="Database Rifle")
+    await ItemSyncService.sync(db_session, 1, StaticProvider(items, recipes, "db-alias"))
+    await db_session.commit()
+
+    first_catalog = await ItemCatalogService.get_catalog(db_session, 1)
+    assert not isinstance(ItemResolver(first_catalog).resolve("тестовыйжаргон"), ResolvedItem)
+
+    localization = (await db_session.execute(select(FoxholeItemLocalization))).scalar_one()
+    await ItemCatalogService.add_alias(
+        db_session,
+        localization,
+        "  ТЕСТОВЫЙЖАРГОН ",
+        created_by=42,
+        alias_type="slang",
+        priority=150,
+    )
+    await db_session.commit()
+
+    refreshed_catalog = await ItemCatalogService.get_catalog(db_session, 1)
+    result = ItemResolver(refreshed_catalog).resolve("тестовыйжаргон")
+    assert isinstance(result, ResolvedItem)
+    assert result.item.api_name == "Database Rifle"
+    assert result.confidence == 100
+    assert result.matched_by == "exact_alias"

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import datetime
+import io
+import json
 import logging
 
 import discord
@@ -14,6 +16,8 @@ from services.audit_service import AuditService
 from services.foxhole_api import FoxholeAPIError
 from services.item_catalog_service import ItemCatalogService
 from services.item_sync_service import ItemSyncService
+from services.item_resolver import ItemResolver
+from services.unknown_query_service import UnknownQueryService
 from ui.views.admin_panel import AdminPanelView
 from utils.embeds import EmbedBuilder
 from utils.permissions import PermissionChecker
@@ -43,7 +47,11 @@ class AdminCog(commands.Cog):
                         hours=max(1, config.FOXHOLEHQ_SYNC_INTERVAL_HOURS)
                     )
                     now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
-                    if last_attempt and now - last_attempt < due_after:
+                    if (
+                        last_attempt
+                        and now - last_attempt < due_after
+                        and status["resource_count"] >= 4
+                    ):
                         await ItemSyncService.ensure_localizations(session, guild.id)
                         await ItemCatalogService.ensure_seed(session, guild.id)
                         await session.commit()
@@ -290,10 +298,130 @@ class AdminCog(commands.Cog):
             )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="afc-item-alias-add", description="[AFC] Добавить жаргонизм к предмету")
-    @app_commands.describe(item_id="ID из /afc-item-search", alias="Новое русское название или жаргонизм")
+    @app_commands.command(name="afc-item-debug", description="[AFC] Диагностика распознавания предмета")
+    @app_commands.describe(query="Проверяемый текст или жаргонизм")
     @app_commands.guild_only()
-    async def item_alias_add(self, interaction: discord.Interaction, item_id: int, alias: str) -> None:
+    async def item_debug(self, interaction: discord.Interaction, query: str) -> None:
+        if not await self._require_admin(interaction):
+            return
+        async with async_session_maker() as session:
+            catalog = await ItemCatalogService.get_catalog(session, interaction.guild_id)
+            await session.commit()
+        result = ItemResolver(catalog).debug(query)
+        matched = result["matched"]
+        candidate_lines = [
+            f"{candidate.item.ru_name} (`{candidate.item.api_name}`) — "
+            f"{candidate.confidence}% via `{candidate.matched_by}`"
+            for candidate in result["candidates"]
+        ]
+        description = (
+            f"**Input:** `{query}`\n"
+            f"**Normalized:** `{result['normalized']}`\n"
+            f"**Matched item:** {matched.item.api_name if matched else 'не выбран'}\n"
+            f"**RU:** {matched.item.ru_name if matched else '—'}\n"
+            f"**Confidence:** {matched.confidence if matched else '—'}%\n"
+            f"**Source:** `{result['source']}`\n\n"
+            f"**Candidates:**\n" + ("\n".join(candidate_lines) or "нет")
+        )
+        await interaction.response.send_message(
+            embed=discord.Embed(title="Resolver debug", description=description[:4096], color=0x5865F2),
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="afc-unknown-aliases", description="[AFC] Частые неизвестные названия")
+    @app_commands.guild_only()
+    async def unknown_aliases(self, interaction: discord.Interaction) -> None:
+        if not await self._require_admin(interaction):
+            return
+        async with async_session_maker() as session:
+            rows = await UnknownQueryService.top(session, interaction.guild_id)
+        description = "\n".join(
+            f"`{row.raw_query}` — **{row.count}** раз" for row in rows
+        ) or "Неизвестных запросов пока нет."
+        await interaction.response.send_message(
+            embed=discord.Embed(title="Неизвестные названия", description=description[:4096], color=0xFEE75C),
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="afc-dictionary-export", description="[AFC] Экспорт словаря Foxhole в JSON")
+    @app_commands.guild_only()
+    async def dictionary_export(self, interaction: discord.Interaction) -> None:
+        if not await self._require_admin(interaction):
+            return
+        async with async_session_maker() as session:
+            entries = await ItemCatalogService.export_dictionary(
+                session, interaction.guild_id
+            )
+        payload = json.dumps(entries, ensure_ascii=False, indent=2).encode("utf-8")
+        await interaction.response.send_message(
+            embed=EmbedBuilder.success("Словарь экспортирован", f"Предметов: **{len(entries)}**"),
+            file=discord.File(io.BytesIO(payload), filename="foxhole_ru_aliases.json"),
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="afc-dictionary-import", description="[AFC] Импорт словаря Foxhole из JSON")
+    @app_commands.describe(file="JSON-файл, полученный экспортом словаря")
+    @app_commands.guild_only()
+    async def dictionary_import(
+        self, interaction: discord.Interaction, file: discord.Attachment
+    ) -> None:
+        if not await self._require_admin(interaction):
+            return
+        if file.size > 2_000_000:
+            await interaction.response.send_message(
+                embed=EmbedBuilder.error("Файл слишком большой", "Максимальный размер: 2 МБ."),
+                ephemeral=True,
+            )
+            return
+        try:
+            entries = json.loads((await file.read()).decode("utf-8-sig"))
+            if not isinstance(entries, list):
+                raise ValueError
+        except (UnicodeError, json.JSONDecodeError, ValueError):
+            await interaction.response.send_message(
+                embed=EmbedBuilder.error("Неверный JSON", "Ожидается массив записей словаря."),
+                ephemeral=True,
+            )
+            return
+        async with async_session_maker() as session:
+            result = await ItemCatalogService.import_dictionary(
+                session, interaction.guild_id, entries, interaction.user.id
+            )
+            await AuditService.log(
+                session,
+                guild_id=interaction.guild_id,
+                user_id=interaction.user.id,
+                user_name=str(interaction.user),
+                action="import_foxhole_dictionary",
+                details=result,
+            )
+            await session.commit()
+        await interaction.response.send_message(
+            embed=EmbedBuilder.success(
+                "Словарь импортирован",
+                f"Алиасов добавлено: **{result['added']}**\n"
+                f"Названий обновлено: **{result['updated']}**\n"
+                f"Неизвестных ID пропущено: **{result['skipped']}**",
+            ),
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="afc-item-alias-add", description="[AFC] Добавить жаргонизм к предмету")
+    @app_commands.describe(
+        item_id="ID из /afc-item-search",
+        alias="Новое русское название или жаргонизм",
+        alias_type="slang, abbreviation, transliteration, typo, caliber или custom",
+        priority="Приоритет 0-200; стандартное значение 100",
+    )
+    @app_commands.guild_only()
+    async def item_alias_add(
+        self,
+        interaction: discord.Interaction,
+        item_id: int,
+        alias: str,
+        alias_type: str = "custom",
+        priority: app_commands.Range[int, 0, 200] = 100,
+    ) -> None:
         if not await self._require_admin(interaction):
             return
         async with async_session_maker() as session:
@@ -305,7 +433,14 @@ class AdminCog(commands.Cog):
                 )
                 return
             try:
-                await ItemCatalogService.add_alias(session, localization, alias, interaction.user.id)
+                await ItemCatalogService.add_alias(
+                    session,
+                    localization,
+                    alias,
+                    interaction.user.id,
+                    alias_type=alias_type,
+                    priority=priority,
+                )
             except ValueError as exc:
                 await interaction.response.send_message(
                     embed=EmbedBuilder.warning("Алиас не добавлен", str(exc)), ephemeral=True
@@ -319,7 +454,7 @@ class AdminCog(commands.Cog):
                 action="add_foxhole_alias",
                 target_type="foxhole_item",
                 target_id=item_id,
-                details={"alias": alias},
+                details={"alias": alias, "alias_type": alias_type, "priority": priority},
             )
             await session.commit()
         await interaction.response.send_message(
