@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from database.models import (
-    FormField,
     Guild,
     LogSettings,
     NotificationSettings,
@@ -70,6 +69,7 @@ class TicketService:
         panel_id: int,
         form_id: Optional[int],
         channel_id: int,
+        original_category_id: Optional[int],
         author_id: int,
         status_id: int,
     ) -> Ticket:
@@ -79,6 +79,7 @@ class TicketService:
             panel_id=panel_id,
             form_id=form_id,
             channel_id=channel_id,
+            original_category_id=original_category_id,
             author_id=author_id,
             status_id=status_id,
             number=number,

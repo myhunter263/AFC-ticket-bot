@@ -27,6 +27,7 @@ class Guild(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
+    archive_category_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
@@ -150,6 +151,7 @@ class Ticket(Base):
         Integer, ForeignKey("ticket_statuses.id", ondelete="SET NULL"), nullable=True
     )
     channel_id: Mapped[int] = mapped_column(BigInteger, unique=True)
+    original_category_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     author_id: Mapped[int] = mapped_column(BigInteger)
     assignee_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)

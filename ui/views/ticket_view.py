@@ -7,20 +7,155 @@ import discord
 from sqlalchemy import select
 
 from config import config
-from database.models import StaffRole, TicketStatus
+from database.models import Guild, StaffRole, TicketStatus
 from database.session import async_session_maker
 from services.audit_service import AuditService
 from services.points_service import PointsService
 from services.status_service import StatusService
 from services.ticket_service import TicketService
 from ui.modals.ticket_modal import TicketCreateModal
-from ui.modals.report_modal import ReportModal, AwardPointsModal
+from ui.modals.report_modal import ReportModal
 from utils.auto_delete import respond_and_delete, schedule_delete
 from utils.embeds import EmbedBuilder
 from utils.permissions import PermissionChecker
 from utils.transcript import TranscriptGenerator
 
 logger = logging.getLogger(__name__)
+
+
+def _member_overwrite() -> discord.PermissionOverwrite:
+    return discord.PermissionOverwrite(
+        view_channel=True,
+        send_messages=True,
+        attach_files=True,
+        embed_links=True,
+        read_message_history=True,
+    )
+
+
+def _staff_overwrite() -> discord.PermissionOverwrite:
+    overwrite = _member_overwrite()
+    overwrite.manage_messages = True
+    return overwrite
+
+
+def _bot_overwrite() -> discord.PermissionOverwrite:
+    return discord.PermissionOverwrite(
+        view_channel=True,
+        send_messages=True,
+        attach_files=True,
+        embed_links=True,
+        read_message_history=True,
+        manage_channels=True,
+        manage_messages=True,
+    )
+
+
+async def _get_staff_roles(session, guild_id: int) -> list[StaffRole]:
+    result = await session.execute(
+        select(StaffRole).where(StaffRole.guild_id == guild_id)
+    )
+    return list(result.scalars().all())
+
+
+async def _ensure_archive_category(
+    session,
+    guild: discord.Guild,
+    staff_roles: list[StaffRole],
+) -> discord.CategoryChannel:
+    db_guild = await session.get(Guild, guild.id)
+    archive = (
+        guild.get_channel(db_guild.archive_category_id)
+        if db_guild and db_guild.archive_category_id
+        else None
+    )
+    overwrites: dict = {
+        guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        guild.me: _bot_overwrite(),
+    }
+    for staff_role in staff_roles:
+        if staff_role.role_type != "admin":
+            continue
+        role = guild.get_role(staff_role.role_id)
+        if role:
+            overwrites[role] = _staff_overwrite()
+
+    if isinstance(archive, discord.CategoryChannel):
+        await archive.edit(
+            overwrites=overwrites,
+            reason="Sync AFC Ticket Bot archive permissions",
+        )
+    else:
+        archive = await guild.create_category(
+            "Архив тикетов",
+            overwrites=overwrites,
+            reason="AFC Ticket Bot archive category",
+        )
+        if db_guild:
+            db_guild.archive_category_id = archive.id
+            await session.flush()
+    return archive
+
+
+async def _archive_ticket_channel(session, ticket, channel: discord.TextChannel) -> None:
+    guild = channel.guild
+    staff_roles = await _get_staff_roles(session, guild.id)
+    archive = await _ensure_archive_category(session, guild, staff_roles)
+
+    if ticket.original_category_id is None:
+        ticket.original_category_id = channel.category_id
+
+    await channel.edit(
+        category=archive,
+        sync_permissions=True,
+        reason="Ticket archived",
+    )
+    await session.flush()
+
+
+async def _restore_ticket_channel(session, ticket, channel: discord.TextChannel) -> None:
+    guild = channel.guild
+    staff_roles = await _get_staff_roles(session, guild.id)
+    category_id = ticket.original_category_id
+    if category_id is None and ticket.panel:
+        category_id = ticket.panel.category_id
+    category = guild.get_channel(category_id) if category_id else None
+    if not isinstance(category, discord.CategoryChannel):
+        category = None
+
+    overwrites: dict = {
+        guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        guild.me: _bot_overwrite(),
+    }
+
+    author = guild.get_member(ticket.author_id)
+    if author:
+        overwrites[author] = _member_overwrite()
+
+    for staff_role in staff_roles:
+        if staff_role.panel_id is not None and staff_role.panel_id != ticket.panel_id:
+            continue
+        role = guild.get_role(staff_role.role_id)
+        if role:
+            overwrites[role] = _staff_overwrite()
+
+    if ticket.panel:
+        for role_id in ticket.panel.viewer_role_ids or []:
+            role = guild.get_role(role_id)
+            if role:
+                overwrites[role] = _member_overwrite()
+
+    for assignee in ticket.assignees:
+        member = guild.get_member(assignee.user_id)
+        if member:
+            overwrites[member] = _member_overwrite()
+
+    await channel.edit(
+        category=category,
+        overwrites=overwrites,
+        sync_permissions=False,
+        reason="Ticket reopened",
+    )
 
 
 class TicketPanelButtonView(discord.ui.View):
@@ -120,40 +255,24 @@ async def _finish_ticket_creation(
 
     overwrites: dict = {
         guild.default_role: discord.PermissionOverwrite(view_channel=False),
-        user: discord.PermissionOverwrite(
-            view_channel=True, send_messages=True, attach_files=True, embed_links=True
-        ),
-        guild.me: discord.PermissionOverwrite(
-            view_channel=True,
-            send_messages=True,
-            manage_channels=True,
-            manage_messages=True,
-        ),
+        user: _member_overwrite(),
+        guild.me: _bot_overwrite(),
     }
 
     async with async_session_maker() as session:
-        result = await session.execute(
-            select(StaffRole).where(StaffRole.guild_id == guild.id)
-        )
-        staff_roles = result.scalars().all()
+        staff_roles = await _get_staff_roles(session, guild.id)
         for sr in staff_roles:
+            if sr.panel_id is not None and sr.panel_id != panel_id:
+                continue
             role = guild.get_role(sr.role_id)
             if role:
-                overwrites[role] = discord.PermissionOverwrite(
-                    view_channel=True, send_messages=True, manage_messages=True
-                )
+                overwrites[role] = _staff_overwrite()
 
     # Viewer roles — can see and write, no manage rights
     for role_id in viewer_role_ids:
         role = guild.get_role(role_id)
         if role:
-            overwrites[role] = discord.PermissionOverwrite(
-                view_channel=True,
-                send_messages=True,
-                attach_files=True,
-                embed_links=True,
-                read_message_history=True,
-            )
+            overwrites[role] = _member_overwrite()
 
     try:
         channel = await guild.create_text_channel(
@@ -179,6 +298,7 @@ async def _finish_ticket_creation(
             panel_id=panel_id,
             form_id=form_id,
             channel_id=channel.id,
+            original_category_id=category.id if category else None,
             author_id=user.id,
             status_id=default_status.id if default_status else None,
         )
@@ -298,8 +418,21 @@ class TicketView(discord.ui.View):
                     embed=EmbedBuilder.warning("Закрыта", "Заявка уже закрыта."), ephemeral=True
                 )
                 return
+            if not await PermissionChecker.is_staff(
+                interaction,
+                session,
+                ticket.panel_id,
+            ):
+                await interaction.response.send_message(
+                    embed=EmbedBuilder.error(
+                        "Нет доступа",
+                        "Взяться за заявку может только настроенный персонал этой панели.",
+                    ),
+                    ephemeral=True,
+                )
+                return
 
-            success, was_already = await TicketService.claim(
+            _, was_already = await TicketService.claim(
                 session, ticket, interaction.user.id, interaction.user.id
             )
 
@@ -316,6 +449,11 @@ class TicketView(discord.ui.View):
                 )
                 await session.commit()
 
+                await interaction.channel.set_permissions(
+                    interaction.user,
+                    overwrite=None,
+                    reason="Ticket assignee removed",
+                )
                 await interaction.response.send_message(
                     embed=EmbedBuilder.info(
                         "Вы отказались от тикета",
@@ -335,6 +473,11 @@ class TicketView(discord.ui.View):
                 )
                 await session.commit()
 
+                await interaction.channel.set_permissions(
+                    interaction.user,
+                    overwrite=_member_overwrite(),
+                    reason="Ticket assignee added",
+                )
                 await interaction.response.send_message(
                     embed=EmbedBuilder.success(
                         "Тикет взят",
@@ -441,6 +584,7 @@ class TicketView(discord.ui.View):
                 return
             default_status = await StatusService.get_default(session, self.guild_id)
             await TicketService.reopen(session, ticket, default_status)
+            await _restore_ticket_channel(session, ticket, interaction.channel)
             await AuditService.log(
                 session,
                 guild_id=self.guild_id,
@@ -452,10 +596,6 @@ class TicketView(discord.ui.View):
             )
             await session.commit()
 
-        channel = interaction.channel
-        await channel.set_permissions(
-            interaction.guild.default_role, view_channel=False
-        )
         await interaction.response.send_message(embed=EmbedBuilder.success("Заявка переоткрыта", "Заявка снова открыта."))
         schedule_delete(interaction, delay=6.0)
         await _refresh_ticket_embed(interaction, self.ticket_id)
@@ -576,21 +716,37 @@ class TicketView(discord.ui.View):
                     embed=EmbedBuilder.error("Ошибка", "Заявка не найдена."), ephemeral=True
                 )
                 return
-            if not PermissionChecker.is_ticket_author_or_discord_admin(interaction, ticket):
+            if interaction.user.id != ticket.author_id:
                 await interaction.response.send_message(
                     embed=EmbedBuilder.error(
                         "Нет доступа",
-                        "Баллы может начислять только автор заявки или администратор Discord-сервера.",
+                        "Через заявку баллы может начислять только её автор.",
                     ),
                     ephemeral=True,
                 )
                 return
+            assignee_ids = [assignee.user_id for assignee in ticket.assignees]
 
-        view = AwardSelectView(self.ticket_id, self.guild_id)
+        if not assignee_ids:
+            await interaction.response.send_message(
+                embed=EmbedBuilder.info(
+                    "Нет исполнителей",
+                    "Сначала сотрудник должен взяться за эту заявку.",
+                ),
+                ephemeral=True,
+            )
+            return
+
+        view = TicketAwardView(
+            self.ticket_id,
+            self.guild_id,
+            interaction.guild,
+            assignee_ids,
+        )
         await interaction.response.send_message(
             embed=EmbedBuilder.info(
                 "Начислить баллы",
-                "Выберите пользователя, которому хотите начислить баллы:",
+                "Выберите исполнителя и фиксированную награду:",
             ),
             view=view,
             ephemeral=True,
@@ -627,81 +783,126 @@ class TicketView(discord.ui.View):
         )
 
 
-class AwardSelectView(discord.ui.View):
-    def __init__(self, ticket_id: int, guild_id: int) -> None:
+class TicketAwardView(discord.ui.View):
+    def __init__(
+        self,
+        ticket_id: int,
+        guild_id: int,
+        guild: discord.Guild,
+        assignee_ids: list[int],
+    ) -> None:
         super().__init__(timeout=60)
         self.ticket_id = ticket_id
         self.guild_id = guild_id
+        self.selected_user_id: int | None = None
 
-        user_select = discord.ui.UserSelect(placeholder="Выберите пользователя...")
-        user_select.callback = self._select_user
-        self.add_item(user_select)
-        self._user_select = user_select
+        options = []
+        for user_id in assignee_ids[:25]:
+            member = guild.get_member(user_id)
+            display_name = member.display_name if member else f"ID {user_id}"
+            options.append(
+                discord.SelectOption(
+                    label=display_name[:100],
+                    value=str(user_id),
+                    description="Исполнитель заявки",
+                )
+            )
 
-    async def _select_user(self, interaction: discord.Interaction) -> None:
+        select = discord.ui.Select(
+            placeholder="Выберите исполнителя...",
+            options=options,
+        )
+        select.callback = self._select_assignee
+        self.add_item(select)
+        self._select = select
+
+        award_50 = discord.ui.Button(
+            label="+50",
+            style=discord.ButtonStyle.success,
+            emoji="⭐",
+            disabled=True,
+        )
+        award_50.callback = self._award_50
+        self.add_item(award_50)
+        self._award_50_button = award_50
+
+        award_100 = discord.ui.Button(
+            label="+100",
+            style=discord.ButtonStyle.success,
+            emoji="⭐",
+            disabled=True,
+        )
+        award_100.callback = self._award_100
+        self.add_item(award_100)
+        self._award_100_button = award_100
+
+    async def _select_assignee(self, interaction: discord.Interaction) -> None:
+        self.selected_user_id = int(self._select.values[0])
+        self._award_50_button.disabled = False
+        self._award_100_button.disabled = False
+        await interaction.response.edit_message(view=self)
+
+    async def _award_50(self, interaction: discord.Interaction) -> None:
+        await self._award(interaction, 50)
+
+    async def _award_100(self, interaction: discord.Interaction) -> None:
+        await self._award(interaction, 100)
+
+    async def _award(self, interaction: discord.Interaction, amount: int) -> None:
+        user_id = self.selected_user_id
+        if user_id is None:
+            await interaction.response.send_message(
+                embed=EmbedBuilder.error("Ошибка", "Сначала выберите исполнителя."),
+                ephemeral=True,
+            )
+            return
         async with async_session_maker() as session:
             ticket = await TicketService.get_by_id(session, self.ticket_id)
-            if not ticket or not PermissionChecker.is_ticket_author_or_discord_admin(interaction, ticket):
+            if not ticket or interaction.user.id != ticket.author_id:
                 await interaction.response.send_message(
-                    embed=EmbedBuilder.error("Нет доступа", "У вас больше нет права начислять баллы в этой заявке."),
+                    embed=EmbedBuilder.error("Нет доступа", "Начислять баллы может только автор этой заявки."),
                     ephemeral=True,
                 )
                 return
-
-        target = self._user_select.values[0]
-        ticket_id = self.ticket_id
-        guild_id = self.guild_id
-
-        async def _on_award(inter: discord.Interaction, user: discord.Member, amount: int, reason: str) -> None:
-            if amount <= 0:
-                await inter.followup.send(
-                    embed=EmbedBuilder.error("Ошибка", "Для начисления укажите положительное число баллов."),
+            if user_id not in {assignee.user_id for assignee in ticket.assignees}:
+                await interaction.response.send_message(
+                    embed=EmbedBuilder.error("Ошибка", "Этот пользователь больше не является исполнителем заявки."),
                     ephemeral=True,
                 )
                 return
-            async with async_session_maker() as session:
-                ticket = await TicketService.get_by_id(session, ticket_id)
-                if not ticket or not PermissionChecker.is_ticket_author_or_discord_admin(inter, ticket):
-                    await inter.followup.send(
-                        embed=EmbedBuilder.error("Нет доступа", "У вас больше нет права начислять баллы в этой заявке."),
-                        ephemeral=True,
-                    )
-                    return
-                entry = await PointsService.award(session, guild_id, user.id, amount)
-                await AuditService.log(
-                    session,
-                    guild_id=guild_id,
-                    user_id=inter.user.id,
-                    user_name=str(inter.user),
-                    action="award_points",
-                    target_type="user",
-                    target_id=user.id,
-                    details={"amount": amount, "reason": reason, "ticket_id": ticket_id},
-                )
-                await session.commit()
-                new_total = entry.points
-
-            award_embed = discord.Embed(
-                title="⭐ Баллы начислены",
-                description=(
-                    f"{user.mention} получил **+{amount} баллов**!\n"
-                    + (f"Причина: {reason}\n" if reason else "")
-                    + f"Всего баллов: **{new_total}**"
-                ),
-                color=config.COLOR_SUCCESS,
+            entry = await PointsService.award(session, self.guild_id, user_id, amount)
+            await AuditService.log(
+                session,
+                guild_id=self.guild_id,
+                user_id=interaction.user.id,
+                user_name=str(interaction.user),
+                action="award_points",
+                target_type="user",
+                target_id=user_id,
+                details={"amount": amount, "ticket_id": self.ticket_id},
             )
-            award_embed.set_author(name=str(inter.user), icon_url=inter.user.display_avatar.url)
-            await inter.channel.send(embed=award_embed)
-            await respond_and_delete(
-                inter,
-                EmbedBuilder.success(
-                    "Баллы начислены",
-                    f"{user.mention} получил **{amount}** баллов. Итого: **{new_total}**.",
-                ),
-            )
+            await session.commit()
+            new_total = entry.points
 
-        modal = AwardPointsModal(target_user=target, on_submit=_on_award)
-        await interaction.response.send_modal(modal)
+        member = interaction.guild.get_member(user_id)
+        mention = member.mention if member else f"<@{user_id}>"
+        award_embed = discord.Embed(
+            title="⭐ Баллы начислены",
+            description=f"{mention} получил **+{amount} баллов**!\nВсего баллов: **{new_total}**",
+            color=config.COLOR_SUCCESS,
+        )
+        award_embed.set_author(
+            name=str(interaction.user),
+            icon_url=interaction.user.display_avatar.url,
+        )
+        await interaction.channel.send(embed=award_embed)
+        await respond_and_delete(
+            interaction,
+            EmbedBuilder.success(
+                "Баллы начислены",
+                f"{mention} получил **{amount}** баллов. Итого: **{new_total}**.",
+            ),
+        )
 
 
 class StatusChangeView(discord.ui.View):
@@ -724,8 +925,23 @@ class StatusChangeView(discord.ui.View):
                     embed=EmbedBuilder.error("Ошибка", "Заявка или статус не найдены."), ephemeral=True
                 )
                 return
+            if not await PermissionChecker.is_staff(
+                interaction,
+                session,
+                ticket.panel_id,
+            ):
+                await interaction.response.send_message(
+                    embed=EmbedBuilder.error("Нет доступа"),
+                    ephemeral=True,
+                )
+                return
             old_name = ticket.status.name if ticket.status else "—"
+            was_closed = ticket.is_closed
             await TicketService.update_status(session, ticket, new_status)
+            if new_status.is_closed and not was_closed:
+                await _archive_ticket_channel(session, ticket, interaction.channel)
+            elif not new_status.is_closed and was_closed:
+                await _restore_ticket_channel(session, ticket, interaction.channel)
             await AuditService.log(
                 session,
                 guild_id=self.guild_id,
@@ -772,6 +988,22 @@ class TransferView(discord.ui.View):
                     embed=EmbedBuilder.error("Ошибка", "Заявка не найдена."), ephemeral=True
                 )
                 return
+            if ticket.is_closed:
+                await interaction.response.send_message(
+                    embed=EmbedBuilder.warning("Закрыта", "Нельзя передать закрытую заявку."),
+                    ephemeral=True,
+                )
+                return
+            if not await PermissionChecker.is_staff(
+                interaction,
+                session,
+                ticket.panel_id,
+            ):
+                await interaction.response.send_message(
+                    embed=EmbedBuilder.error("Нет доступа"),
+                    ephemeral=True,
+                )
+                return
             # Add as assignee
             await TicketService.claim(session, ticket, member.id, interaction.user.id)
             await AuditService.log(
@@ -786,6 +1018,11 @@ class TransferView(discord.ui.View):
             )
             await session.commit()
 
+        await interaction.channel.set_permissions(
+            member,
+            overwrite=_member_overwrite(),
+            reason="Ticket transferred",
+        )
         channel = interaction.channel
         await channel.send(
             embed=discord.Embed(
@@ -817,6 +1054,18 @@ class ConfirmCloseView(discord.ui.View):
                     embed=EmbedBuilder.error("Ошибка", "Заявка не найдена."), ephemeral=True
                 )
                 return
+            if not await PermissionChecker.can_manage_ticket(interaction, session, ticket):
+                await interaction.followup.send(
+                    embed=EmbedBuilder.error("Нет доступа"),
+                    ephemeral=True,
+                )
+                return
+            if ticket.is_closed:
+                await interaction.followup.send(
+                    embed=EmbedBuilder.warning("Уже закрыта", "Заявка уже закрыта."),
+                    ephemeral=True,
+                )
+                return
 
             result = await session.execute(
                 select(TicketStatus).where(
@@ -829,6 +1078,7 @@ class ConfirmCloseView(discord.ui.View):
             status_name = closed_status.name if closed_status else "Закрыта"
 
             await TicketService.close(session, ticket, interaction.user.id, closed_status)
+            await _archive_ticket_channel(session, ticket, interaction.channel)
             await AuditService.log(
                 session,
                 guild_id=self.guild_id,

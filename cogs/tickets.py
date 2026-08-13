@@ -7,9 +7,8 @@ from discord import app_commands
 from discord.ext import commands
 
 from database.session import async_session_maker
-from services.status_service import StatusService
 from services.ticket_service import TicketService
-from ui.views.ticket_view import TicketPanelButtonView, TicketView, _refresh_ticket_embed
+from ui.views.ticket_view import TicketPanelButtonView, TicketView
 from utils.embeds import EmbedBuilder
 from utils.permissions import PermissionChecker
 from utils.transcript import TranscriptGenerator
@@ -35,15 +34,15 @@ class TicketsCog(commands.Cog):
             panels = result.scalars().all()
             for panel in panels:
                 view = TicketPanelButtonView(panel.id, panel.button_label, panel.button_emoji)
-                self.bot.add_view(view)
+                self.bot.add_view(view, message_id=panel.message_id)
 
             result = await session.execute(
-                select(Ticket).where(Ticket.is_closed == False)
+                select(Ticket).where(Ticket.message_id.is_not(None))
             )
             tickets = result.scalars().all()
             for ticket in tickets:
                 view = TicketView(ticket_id=ticket.id, guild_id=ticket.guild_id)
-                self.bot.add_view(view)
+                self.bot.add_view(view, message_id=ticket.message_id)
 
         logger.info(
             "Restored %d panel views and %d ticket views.",

@@ -65,6 +65,12 @@ async def init_db() -> None:
                 await conn.execute(
                     text("ALTER TABLE audit_logs ALTER COLUMN target_id TYPE BIGINT")
                 )
+                await conn.execute(
+                    text("ALTER TABLE guilds ADD COLUMN IF NOT EXISTS archive_category_id BIGINT")
+                )
+                await conn.execute(
+                    text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS original_category_id BIGINT")
+                )
             logger.info("Database initialized successfully.")
             return
         except Exception as exc:
