@@ -120,6 +120,15 @@ class ItemCatalogService:
         existing = {
             alias.normalized_alias: alias for alias in existing_result.scalars().all()
         }
+        # The session deliberately has autoflush disabled. Include aliases queued
+        # by an earlier seed layer so manual aliases can replace their metadata
+        # without scheduling a duplicate INSERT in the same transaction.
+        existing.update({
+            alias.normalized_alias: alias
+            for alias in session.new
+            if isinstance(alias, FoxholeItemAlias)
+            and alias.localization_id == localization.id
+        })
         for alias in aliases:
             normalized = TextNormalizer.normalize(alias)
             if not normalized:
@@ -251,7 +260,10 @@ class ItemCatalogService:
                 )
                 session.add(localization)
                 await session.flush()
-            elif not localization.ru_name or localization.translation_status == "missing":
+            elif (
+                not localization.ru_name
+                or localization.translation_status in {"missing", "auto_transliterated"}
+            ):
                 localization.ru_name = data["ru_name"]
                 localization.translation_status = "translated"
             await ItemCatalogService._upsert_seed_aliases(

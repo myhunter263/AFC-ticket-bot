@@ -222,3 +222,36 @@ async def test_new_database_alias_is_visible_without_bot_restart(db_session):
     assert result.item.api_name == "Database Rifle"
     assert result.confidence == 100
     assert result.matched_by == "exact_alias"
+
+
+@pytest.mark.asyncio
+async def test_seed_layers_deduplicate_pending_alias_with_autoflush_disabled(db_session):
+    item = FoxholeItem(api_id="foxholehq:aalto", api_name="Aalto Storm Rifle 24")
+    db_session.add(item)
+    await db_session.flush()
+    localization = FoxholeItemLocalization(
+        guild_id=1,
+        item_id=item.id,
+        ru_name="Аалто",
+        translation_status="translated",
+    )
+    db_session.add(localization)
+    await db_session.flush()
+
+    await ItemCatalogService._upsert_seed_aliases(
+        db_session, localization, ["аалто"], "auto_transliteration", 70
+    )
+    await ItemCatalogService._upsert_seed_aliases(
+        db_session, localization, ["аалто"], "transliteration", 105
+    )
+    await db_session.flush()
+
+    aliases = list((await db_session.execute(
+        select(FoxholeItemAlias).where(
+            FoxholeItemAlias.localization_id == localization.id
+        )
+    )).scalars().all())
+    assert len(aliases) == 1
+    assert aliases[0].normalized_alias == "аалто"
+    assert aliases[0].alias_type == "transliteration"
+    assert aliases[0].priority == 105
