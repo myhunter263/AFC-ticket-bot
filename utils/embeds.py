@@ -53,6 +53,7 @@ class EmbedBuilder:
         status_color: int,
         status_emoji: str,
         responses: list,
+        order_items: list | None = None,
     ) -> discord.Embed:
         embed = discord.Embed(
             title=f"Заявка #{ticket.number:04d}",
@@ -72,9 +73,13 @@ class EmbedBuilder:
         else:
             embed.add_field(name="Исполнители", value="Никто не взялся", inline=True)
 
-        if responses:
+        regular_responses = [
+            response for response in responses or []
+            if not isinstance(response, dict) or response.get("field_type") != "foxhole_order"
+        ]
+        if regular_responses:
             embed.add_field(name="​", value="**Данные заявки:**", inline=False)
-            for resp in responses:
+            for resp in regular_responses:
                 if isinstance(resp, dict):
                     label = resp.get("field_label", "Поле")
                     value = resp.get("value", "")
@@ -94,6 +99,67 @@ class EmbedBuilder:
         embed.set_footer(text=f"ID: {ticket.id}")
         embed.timestamp = datetime.datetime.utcnow()
         return embed
+
+    @staticmethod
+    def _format_resources(resources: dict) -> str:
+        if not resources:
+            return "недоступно"
+        return ", ".join(
+            f"{amount:,} {config.FOXHOLE_RESOURCE_LABELS.get(resource, resource.upper())}".replace(",", " ")
+            for resource, amount in resources.items()
+        )
+
+    @staticmethod
+    def ticket_order_embeds(order_items: list | None) -> list[discord.Embed]:
+        if not order_items:
+            return []
+        lines: list[str] = []
+        for item in order_items:
+            if isinstance(item, dict):
+                name = item["display_name"]
+                quantity = item["quantity"]
+                unit = item["unit"]
+                snapshot = item.get("cost_snapshot") or {}
+            else:
+                name = item.display_name
+                quantity = item.quantity
+                unit = item.unit
+                snapshot = item.cost_snapshot or {}
+            unit_label = "шт." if unit == "item" else "ящиков"
+            standard = EmbedBuilder._format_resources(snapshot.get("factory", {}))
+            site = {"Factory": "фабрике", "Garage": "гараже"}.get(
+                snapshot.get("factory_site"), snapshot.get("factory_site") or "производстве"
+            )
+            mpf = EmbedBuilder._format_resources(snapshot.get("mpf", {}))
+            mpf_crates = snapshot.get("mpf_crates", 0)
+            mpf_text = (
+                f"{mpf} на MPF за {mpf_crates} ящиков"
+                if mpf_crates else "MPF недоступно"
+            )
+            lines.append(
+                f"• **{name}** — {quantity} {unit_label}\n"
+                f"  ({standard} на {site} / {mpf_text})"
+            )
+
+        pages: list[str] = []
+        current = ""
+        for line in lines:
+            candidate = f"{current}\n\n{line}" if current else line
+            if len(candidate) > 4000 and current:
+                pages.append(current)
+                current = line
+            else:
+                current = candidate
+        if current:
+            pages.append(current)
+        return [
+            discord.Embed(
+                title="Заказ Foxhole" if index == 0 else "Заказ Foxhole · продолжение",
+                description=page,
+                color=config.COLOR_PRIMARY,
+            )
+            for index, page in enumerate(pages[:9])
+        ]
 
     @staticmethod
     def panel_embed(
@@ -127,6 +193,7 @@ class EmbedBuilder:
         embed.add_field(name="📝 Логи", value="Каналы для журналирования", inline=True)
         embed.add_field(name="🔍 Аудит", value="Просмотр журнала действий", inline=True)
         embed.add_field(name="💾 Резервные копии", value="Управление бэкапами", inline=True)
+        embed.add_field(name="Каталог Foxhole", value="Предметы, русские названия и алиасы", inline=True)
         embed.timestamp = datetime.datetime.utcnow()
         return embed
 

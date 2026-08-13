@@ -23,12 +23,13 @@ class TicketCreateModal(discord.ui.Modal):
         for field in fields[:5]:
             style = (
                 discord.TextStyle.long
-                if field.get("field_type") in ("long_text",)
+                if field.get("field_type") in ("long_text", "foxhole_order")
                 else discord.TextStyle.short
             )
             item = discord.ui.TextInput(
                 label=field["label"][:45],
                 placeholder=field.get("placeholder") or "",
+                default=field.get("default"),
                 required=field.get("is_required", True),
                 min_length=field.get("min_length") or 0,
                 max_length=field.get("max_length") or 1024,

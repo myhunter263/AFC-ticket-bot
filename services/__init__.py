@@ -1,6 +1,5 @@
-from .ticket_service import TicketService
-from .form_service import FormService
-from .status_service import StatusService
-from .audit_service import AuditService
+"""Application services.
 
-__all__ = ["TicketService", "FormService", "StatusService", "AuditService"]
+Submodules are intentionally not imported here: parser and calculator tests must
+not need a configured database or Discord token.
+"""

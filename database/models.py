@@ -40,6 +40,9 @@ class Guild(Base):
     staff_roles: Mapped[List["StaffRole"]] = relationship(back_populates="guild", cascade="all, delete-orphan")
     audit_logs: Mapped[List["AuditLog"]] = relationship(back_populates="guild", cascade="all, delete-orphan")
     user_points: Mapped[List["UserPoints"]] = relationship(back_populates="guild", cascade="all, delete-orphan")
+    foxhole_localizations: Mapped[List["FoxholeItemLocalization"]] = relationship(
+        back_populates="guild", cascade="all, delete-orphan"
+    )
     notification_settings: Mapped[Optional["NotificationSettings"]] = relationship(
         back_populates="guild", cascade="all, delete-orphan", uselist=False
     )
@@ -179,6 +182,9 @@ class Ticket(Base):
     reports: Mapped[List["TicketReport"]] = relationship(
         back_populates="ticket", cascade="all, delete-orphan", order_by="TicketReport.created_at"
     )
+    order_items: Mapped[List["TicketOrderItem"]] = relationship(
+        back_populates="ticket", cascade="all, delete-orphan", order_by="TicketOrderItem.position"
+    )
 
 
 class TicketResponse(Base):
@@ -190,6 +196,7 @@ class TicketResponse(Base):
         Integer, ForeignKey("form_fields.id", ondelete="SET NULL"), nullable=True
     )
     field_label: Mapped[str] = mapped_column(String(100))
+    field_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     value: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
 
@@ -296,3 +303,89 @@ class UserPoints(Base):
     guild: Mapped["Guild"] = relationship(back_populates="user_points")
 
     __table_args__ = (UniqueConstraint("guild_id", "user_id", name="uq_user_points"),)
+
+
+class FoxholeItem(Base):
+    __tablename__ = "foxhole_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    api_id: Mapped[str] = mapped_column(String(200), unique=True)
+    api_name: Mapped[str] = mapped_column(String(200), index=True)
+    category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    is_vehicle: Mapped[bool] = mapped_column(Boolean, default=False)
+    crate_size: Mapped[int] = mapped_column(Integer, default=1)
+    vehicle_crate_size: Mapped[int] = mapped_column(Integer, default=3)
+    factory_site: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    factory_cost: Mapped[dict] = mapped_column(JSON, default=dict)
+    mpf_available: Mapped[bool] = mapped_column(Boolean, default=False)
+    mpf_max_crates: Mapped[int] = mapped_column(Integer, default=9)
+    raw_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    synced_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    localizations: Mapped[List["FoxholeItemLocalization"]] = relationship(
+        back_populates="item", cascade="all, delete-orphan"
+    )
+
+
+class FoxholeItemLocalization(Base):
+    __tablename__ = "foxhole_item_localizations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("guilds.id", ondelete="CASCADE"))
+    item_id: Mapped[int] = mapped_column(Integer, ForeignKey("foxhole_items.id", ondelete="CASCADE"))
+    ru_name: Mapped[str] = mapped_column(String(200))
+    is_vehicle_override: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    overrides: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    guild: Mapped["Guild"] = relationship(back_populates="foxhole_localizations")
+    item: Mapped["FoxholeItem"] = relationship(back_populates="localizations")
+    aliases: Mapped[List["FoxholeItemAlias"]] = relationship(
+        back_populates="localization", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("guild_id", "item_id", name="uq_foxhole_localization"),
+    )
+
+
+class FoxholeItemAlias(Base):
+    __tablename__ = "foxhole_item_aliases"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    localization_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("foxhole_item_localizations.id", ondelete="CASCADE")
+    )
+    alias: Mapped[str] = mapped_column(String(200))
+    normalized_alias: Mapped[str] = mapped_column(String(200), index=True)
+    created_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    localization: Mapped["FoxholeItemLocalization"] = relationship(back_populates="aliases")
+
+    __table_args__ = (
+        UniqueConstraint("localization_id", "normalized_alias", name="uq_foxhole_alias"),
+    )
+
+
+class TicketOrderItem(Base):
+    __tablename__ = "ticket_order_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticket_id: Mapped[int] = mapped_column(Integer, ForeignKey("tickets.id", ondelete="CASCADE"))
+    item_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("foxhole_items.id", ondelete="SET NULL"), nullable=True
+    )
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    quantity: Mapped[int] = mapped_column(Integer)
+    unit: Mapped[str] = mapped_column(String(20))
+    query: Mapped[str] = mapped_column(String(300))
+    display_name: Mapped[str] = mapped_column(String(200))
+    confidence: Mapped[int] = mapped_column(Integer)
+    matched_by: Mapped[str] = mapped_column(String(50))
+    cost_snapshot: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
+    ticket: Mapped["Ticket"] = relationship(back_populates="order_items")
+    item: Mapped[Optional["FoxholeItem"]] = relationship()

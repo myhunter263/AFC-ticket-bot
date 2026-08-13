@@ -13,6 +13,8 @@ from services.audit_service import AuditService
 from services.points_service import PointsService
 from services.status_service import StatusService
 from services.ticket_service import TicketService
+from services.item_catalog_service import ItemCatalogService
+from services.order_preview_service import OrderPreviewService
 from ui.modals.ticket_modal import TicketCreateModal
 from ui.modals.report_modal import ReportModal
 from utils.auto_delete import respond_and_delete, schedule_delete
@@ -221,9 +223,23 @@ class TicketPanelButtonView(discord.ui.View):
 
         if form_fields:
             async def on_modal_submit(inter: discord.Interaction, responses: list[dict]) -> None:
-                await _finish_ticket_creation(
-                    inter, self.panel_id, form_id, responses, category_id, ping_role_ids, viewer_role_ids
+                for response, metadata in zip(responses, form_fields):
+                    response["field_type"] = metadata["field_type"]
+                order_response = next(
+                    (response for response in responses if response.get("field_type") == "foxhole_order"),
+                    None,
                 )
+                if order_response:
+                    await _show_order_preview(
+                        inter, self.panel_id, form_id, responses, category_id,
+                        ping_role_ids, viewer_role_ids, order_response["value"], panel_name,
+                    )
+                else:
+                    await inter.response.defer(ephemeral=True)
+                    await _finish_ticket_creation(
+                        inter, self.panel_id, form_id, responses, category_id,
+                        ping_role_ids, viewer_role_ids
+                    )
 
             modal = TicketCreateModal(
                 panel_name=panel_name,
@@ -246,6 +262,7 @@ async def _finish_ticket_creation(
     category_id: Optional[int],
     ping_role_ids: list,
     viewer_role_ids: list,
+    order_items: list[dict] | None = None,
 ) -> None:
     guild = interaction.guild
     user = interaction.user
@@ -304,6 +321,8 @@ async def _finish_ticket_creation(
         )
         if responses:
             await TicketService.save_responses(session, ticket, responses)
+        if order_items:
+            await TicketService.save_order_items(session, ticket, order_items)
 
         await AuditService.log(
             session,
@@ -337,6 +356,7 @@ async def _finish_ticket_creation(
         status_color=status_color,
         status_emoji=status_emoji,
         responses=responses,
+        order_items=order_items or [],
     )
 
     view = TicketView(ticket_id=ticket_id, guild_id=guild.id)
@@ -351,6 +371,12 @@ async def _finish_ticket_creation(
         if t:
             t.message_id = ticket_msg.id
             await session.commit()
+
+    for order_embed in EmbedBuilder.ticket_order_embeds(order_items):
+        try:
+            await channel.send(embed=order_embed)
+        except discord.HTTPException as exc:
+            logger.warning("Failed to send an order embed for ticket %d: %s", ticket_id, exc)
 
     await channel.send(
         embed=discord.Embed(
@@ -394,6 +420,194 @@ async def _finish_ticket_creation(
                 await log_ch.send(embed=log_embed)
             except discord.HTTPException:
                 pass
+
+
+async def _show_order_preview(
+    interaction: discord.Interaction,
+    panel_id: int,
+    form_id: Optional[int],
+    responses: list[dict],
+    category_id: Optional[int],
+    ping_role_ids: list,
+    viewer_role_ids: list,
+    order_text: str,
+    panel_name: str,
+) -> None:
+    if not interaction.response.is_done():
+        await interaction.response.defer(ephemeral=True)
+    async with async_session_maker() as session:
+        catalog = await ItemCatalogService.get_catalog(session, interaction.guild_id)
+        await session.commit()
+
+    service = OrderPreviewService(catalog)
+    order = service.parse(order_text)
+    if not order.items and not order.unresolved:
+        await interaction.edit_original_response(
+            embed=EmbedBuilder.error(
+                "Заказ не распознан",
+                "Укажите каждую позицию с количеством, например: `15 ящиков аргенти`.",
+            ),
+            view=None,
+        )
+        return
+
+    view = OrderPreviewView(
+        author_id=interaction.user.id,
+        panel_id=panel_id,
+        form_id=form_id,
+        responses=responses,
+        category_id=category_id,
+        ping_role_ids=ping_role_ids,
+        viewer_role_ids=viewer_role_ids,
+        panel_name=panel_name,
+        service=service,
+        order=order,
+    )
+    await interaction.edit_original_response(embed=view.make_embed(), view=view)
+
+
+class OrderPreviewView(discord.ui.View):
+    def __init__(
+        self,
+        *,
+        author_id: int,
+        panel_id: int,
+        form_id: Optional[int],
+        responses: list[dict],
+        category_id: Optional[int],
+        ping_role_ids: list,
+        viewer_role_ids: list,
+        panel_name: str,
+        service: OrderPreviewService,
+        order,
+    ) -> None:
+        super().__init__(timeout=300)
+        self.author_id = author_id
+        self.panel_id = panel_id
+        self.form_id = form_id
+        self.responses = responses
+        self.category_id = category_id
+        self.ping_role_ids = ping_role_ids
+        self.viewer_role_ids = viewer_role_ids
+        self.panel_name = panel_name
+        self.service = service
+        self.order = order
+        self._rebuild_candidates()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id == self.author_id:
+            return True
+        await interaction.response.send_message(
+            embed=EmbedBuilder.error("Нет доступа", "Это предпросмотр другого пользователя."),
+            ephemeral=True,
+        )
+        return False
+
+    def make_embed(self) -> discord.Embed:
+        description = self.service.format_order(self.order)
+        if any(item.resolved.requires_confirmation for item in self.order.items):
+            description += "\n\n⚠️ Проверьте позиции с вероятным совпадением перед созданием."
+        if self.order.unresolved:
+            description += "\n\nВыберите вариант для каждой нераспознанной позиции."
+        return discord.Embed(
+            title="Предпросмотр заказа",
+            description=description[:4096],
+            color=config.COLOR_WARNING if self.order.requires_confirmation else config.COLOR_SUCCESS,
+        )
+
+    def _rebuild_candidates(self) -> None:
+        for child in list(self.children):
+            if isinstance(child, discord.ui.Select):
+                self.remove_item(child)
+        for index, unresolved in enumerate(self.order.unresolved[:3]):
+            options = [
+                discord.SelectOption(
+                    label=candidate.item.ru_name[:100],
+                    value=f"{index}:{candidate.item.id}",
+                    description=f"{candidate.item.api_name[:70]} · {candidate.confidence}%",
+                )
+                for candidate in unresolved.result.candidates[:24]
+                if candidate.item.id is not None
+            ]
+            if not options:
+                options = [
+                    discord.SelectOption(
+                        label=item.ru_name[:100],
+                        value=f"{index}:{item.id}",
+                        description=item.api_name[:100],
+                    )
+                    for item in self.service.catalog[:24]
+                    if item.id is not None
+                ]
+            select_menu = discord.ui.Select(
+                placeholder=f"Выберите: {unresolved.line.query}"[:150],
+                options=options,
+                row=min(index, 2),
+            )
+            select_menu.callback = self._choose_candidate
+            self.add_item(select_menu)
+        self.create_order.disabled = bool(self.order.unresolved)
+
+    async def _choose_candidate(self, interaction: discord.Interaction) -> None:
+        index, item_id = map(int, interaction.data["values"][0].split(":"))
+        self.service.choose_candidate(self.order, index, item_id)
+        self._rebuild_candidates()
+        await interaction.response.edit_message(embed=self.make_embed(), view=self)
+
+    @discord.ui.button(label="Создать заказ", style=discord.ButtonStyle.success, row=3)
+    async def create_order(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(embed=self.make_embed(), view=self)
+        await _finish_ticket_creation(
+            interaction,
+            self.panel_id,
+            self.form_id,
+            self.responses,
+            self.category_id,
+            self.ping_role_ids,
+            self.viewer_role_ids,
+            self.service.snapshots(self.order),
+        )
+        self.stop()
+
+    @discord.ui.button(label="Изменить", style=discord.ButtonStyle.secondary, row=3)
+    async def edit_order(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        modal = TicketCreateModal(
+            panel_name=self.panel_name,
+            fields=[{
+                "id": response.get("field_id"),
+                "label": response["field_label"],
+                "placeholder": response["value"][:100],
+                "default": response["value"],
+                "field_type": response.get("field_type", "text"),
+                "is_required": True,
+                "max_length": (
+                    4000 if response.get("field_type") == "foxhole_order" else 1024
+                ),
+            } for response in self.responses],
+            on_submit_callback=self._edited,
+        )
+        await interaction.response.send_modal(modal)
+
+    async def _edited(self, interaction: discord.Interaction, responses: list[dict]) -> None:
+        for response, old_response in zip(responses, self.responses):
+            response["field_type"] = old_response.get("field_type", "text")
+        order_response = next(
+            response for response in responses if response.get("field_type") == "foxhole_order"
+        )
+        await _show_order_preview(
+            interaction, self.panel_id, self.form_id, responses, self.category_id,
+            self.ping_role_ids, self.viewer_role_ids, order_response["value"], self.panel_name,
+        )
+
+    @discord.ui.button(label="Отмена", style=discord.ButtonStyle.danger, row=3)
+    async def cancel_order(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        self.stop()
+        await interaction.response.edit_message(
+            embed=EmbedBuilder.info("Создание отменено", "Заявка не была создана."),
+            view=None,
+        )
 
 
 class TicketView(discord.ui.View):
@@ -1181,12 +1395,21 @@ async def _refresh_ticket_embed(interaction: discord.Interaction, ticket_id: int
             ticket = await TicketService.get_by_id(session, ticket_id)
             if not ticket or not ticket.message_id:
                 return
-            responses = ticket.responses
+            responses = [
+                {
+                    "field_id": response.field_id,
+                    "field_label": response.field_label,
+                    "value": response.value,
+                    "field_type": response.field_type or "text",
+                }
+                for response in ticket.responses
+            ]
             status = ticket.status
             status_name = status.name if status else "Неизвестно"
             status_color = status.color if status else config.COLOR_PRIMARY
             status_emoji = status.emoji or "" if status else ""
             assignee_user_ids = [a.user_id for a in ticket.assignees]
+            order_items = list(ticket.order_items)
             message_id = ticket.message_id
 
         channel = interaction.channel
@@ -1207,6 +1430,7 @@ async def _refresh_ticket_embed(interaction: discord.Interaction, ticket_id: int
             status_color=status_color,
             status_emoji=status_emoji,
             responses=responses,
+            order_items=order_items,
         )
         view = TicketView(ticket_id=ticket_id, guild_id=interaction.guild_id)
         await msg.edit(embed=embed, view=view)

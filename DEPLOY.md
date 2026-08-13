@@ -161,6 +161,21 @@ docker compose logs --tail=100 bot
 
 ## 9. Обновление проекта без потери данных
 
+### Перед первым обновлением с каталогом Foxhole
+
+Версия с распознаванием заказов добавляет миграцию `003`. Перед деплоем один раз
+создайте дамп текущей БД:
+
+```bash
+mkdir -p /opt/backups
+cd /opt/AFC-ticket-bot/discord-ticket-bot
+docker compose exec -T db pg_dump -U ticketbot ticketbot \
+  > /opt/backups/before_foxhole_catalog_$(date +%Y%m%d_%H%M%S).sql
+```
+
+Миграция применяется ботом автоматически при старте. Она только добавляет новые
+таблицы каталога и заказов, существующие тикеты и баллы не удаляются.
+
 ```bash
 # Перейти в корень репозитория
 cd /opt/AFC-ticket-bot
@@ -181,6 +196,15 @@ docker compose up -d --no-deps bot
 docker compose ps
 docker compose logs --tail=30 bot
 ```
+
+После обновления проверьте миграцию и запуск:
+
+```bash
+docker compose logs --tail=100 bot | grep -E "Running upgrade|Database initialized|Bot is ready|ERROR"
+docker compose exec -T db psql -U ticketbot ticketbot -c "SELECT version_num FROM alembic_version;"
+```
+
+Ожидаемая версия Alembic: `003`.
 
 > **Важно:** `docker compose up -d --no-deps bot` перезапускает только бота.
 > PostgreSQL и все данные остаются нетронутыми.

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 from typing import AsyncGenerator, Optional
 
 from asyncpg.exceptions import InvalidAuthorizationSpecificationError, InvalidPasswordError
@@ -55,22 +56,35 @@ async def init_db() -> None:
     for attempt in range(1, retries + 1):
         try:
             async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-                await conn.execute(
-                    text("ALTER TABLE ticket_panels ADD COLUMN IF NOT EXISTS ping_role_ids JSONB")
-                )
-                await conn.execute(
-                    text("ALTER TABLE ticket_panels ADD COLUMN IF NOT EXISTS viewer_role_ids JSONB")
-                )
-                await conn.execute(
-                    text("ALTER TABLE audit_logs ALTER COLUMN target_id TYPE BIGINT")
-                )
-                await conn.execute(
-                    text("ALTER TABLE guilds ADD COLUMN IF NOT EXISTS archive_category_id BIGINT")
-                )
-                await conn.execute(
-                    text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS original_category_id BIGINT")
-                )
+                has_guilds = await conn.scalar(text("SELECT to_regclass('public.guilds')"))
+                has_version = await conn.scalar(text("SELECT to_regclass('public.alembic_version')"))
+                if has_guilds:
+                    if not has_version:
+                        await conn.execute(text(
+                            "CREATE TABLE alembic_version (version_num VARCHAR(32) PRIMARY KEY)"
+                        ))
+                    current_version = await conn.scalar(text(
+                        "SELECT version_num FROM alembic_version LIMIT 1"
+                    ))
+                    if not current_version:
+                        await conn.execute(text(
+                            "INSERT INTO alembic_version (version_num) VALUES ('002')"
+                        ))
+
+            process = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-m",
+                "alembic",
+                "upgrade",
+                "head",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await process.communicate()
+            if process.returncode:
+                raise RuntimeError(stderr.decode("utf-8", errors="replace"))
+            if stdout:
+                logger.info(stdout.decode("utf-8", errors="replace").strip())
             logger.info("Database initialized successfully.")
             return
         except Exception as exc:

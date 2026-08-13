@@ -20,6 +20,7 @@ from database.models import (
     TicketReport,
     TicketResponse,
     TicketStatus,
+    TicketOrderItem,
 )
 from services.status_service import StatusService
 
@@ -100,9 +101,20 @@ class TicketService:
                 ticket_id=ticket.id,
                 field_id=resp.get("field_id"),
                 field_label=resp["field_label"],
+                field_type=resp.get("field_type"),
                 value=resp["value"],
             )
             session.add(r)
+        await session.flush()
+
+    @staticmethod
+    async def save_order_items(
+        session: AsyncSession,
+        ticket: Ticket,
+        items: list[dict],
+    ) -> None:
+        for position, item in enumerate(items):
+            session.add(TicketOrderItem(ticket_id=ticket.id, position=position, **item))
         await session.flush()
 
     @staticmethod
@@ -118,6 +130,7 @@ class TicketService:
                 selectinload(Ticket.panel),
                 selectinload(Ticket.assignees),
                 selectinload(Ticket.reports),
+                selectinload(Ticket.order_items),
             )
         )
         return result.scalar_one_or_none()
@@ -133,6 +146,7 @@ class TicketService:
                 selectinload(Ticket.panel),
                 selectinload(Ticket.assignees),
                 selectinload(Ticket.reports),
+                selectinload(Ticket.order_items),
             )
         )
         return result.scalar_one_or_none()

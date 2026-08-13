@@ -8,12 +8,14 @@ from database.models import LogSettings, NotificationSettings, StaffRole
 from database.session import async_session_maker
 from services.audit_service import AuditService
 from services.form_service import FormService
+from services.item_catalog_service import ItemCatalogService
 from utils.auto_delete import respond_and_delete, schedule_delete
 from services.status_service import StatusService
 from services.ticket_service import TicketService
 from ui.modals.panel_modal import PanelCreateModal, PanelEditModal
 from ui.views.form_builder import FormListView
 from ui.views.status_manager import StatusListView
+from ui.views.item_catalog import ItemCatalogView
 from utils.embeds import EmbedBuilder
 from utils.permissions import PermissionChecker
 
@@ -214,6 +216,26 @@ class AdminPanelView(discord.ui.View):
             )
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label="Каталог Foxhole", style=discord.ButtonStyle.primary, row=3)
+    async def manage_item_catalog(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        async with async_session_maker() as session:
+            if not await PermissionChecker.is_bot_admin(interaction, session):
+                await interaction.response.send_message(
+                    embed=EmbedBuilder.error("Нет доступа"), ephemeral=True
+                )
+                return
+            await ItemCatalogService.ensure_seed(session, self.guild_id)
+            catalog = await ItemCatalogService.get_catalog(session, self.guild_id)
+            await session.commit()
+        embed = discord.Embed(
+            title="Каталог Foxhole",
+            description=f"Предметов в локальном каталоге: **{len(catalog)}**",
+            color=config.COLOR_PRIMARY,
+        )
+        await interaction.response.send_message(
+            embed=embed, view=ItemCatalogView(self.guild_id), ephemeral=True
+        )
 
 
 class PanelManageView(discord.ui.View):

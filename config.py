@@ -29,6 +29,19 @@ class Config:
     BOT_PREFIX: str = os.getenv("BOT_PREFIX", "!")
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     MAX_TICKETS_PER_USER: int = int(os.getenv("MAX_TICKETS_PER_USER", "5"))
+    FOXHOLE_ITEM_API_URL: str = os.getenv("FOXHOLE_ITEM_API_URL", "").strip()
+    FOXHOLE_RESOLVE_AUTO_THRESHOLD: int = int(
+        os.getenv("FOXHOLE_RESOLVE_AUTO_THRESHOLD", "90")
+    )
+    FOXHOLE_RESOLVE_CONFIRM_THRESHOLD: int = int(
+        os.getenv("FOXHOLE_RESOLVE_CONFIRM_THRESHOLD", "75")
+    )
+    FOXHOLE_RESOURCE_LABELS: dict[str, str] = {
+        "bmat": os.getenv("FOXHOLE_RESOURCE_BMAT", "BMat"),
+        "rmat": os.getenv("FOXHOLE_RESOURCE_RMAT", "RMat"),
+        "emat": os.getenv("FOXHOLE_RESOURCE_EMAT", "EMat"),
+        "hemat": os.getenv("FOXHOLE_RESOURCE_HEMAT", "HEMat"),
+    }
 
     # Colors
     COLOR_PRIMARY: int = 0x5865F2

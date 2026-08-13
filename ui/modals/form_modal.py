@@ -65,8 +65,8 @@ class FormFieldModal(discord.ui.Modal, title="Добавить поле"):
         max_length=100,
     )
     max_length = discord.ui.TextInput(
-        label="Макс. символов (1-1024, необязательно)",
-        placeholder="1024",
+        label="Макс. символов (1-4000)",
+        placeholder="4000 для заказа, 1024 для текста",
         required=False,
         max_length=4,
     )
@@ -76,8 +76,8 @@ class FormFieldModal(discord.ui.Modal, title="Добавить поле"):
         max_length=3,
     )
     field_type = discord.ui.TextInput(
-        label="Тип поля (text/long_text)",
-        placeholder="text",
+        label="Тип: text/long_text/foxhole_order",
+        placeholder="foxhole_order — распознаваемый заказ",
         max_length=20,
     )
 
@@ -87,13 +87,14 @@ class FormFieldModal(discord.ui.Modal, title="Добавить поле"):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         raw_type = self.field_type.value.strip().lower()
-        resolved_type = raw_type if raw_type in ("text", "long_text") else "text"
+        resolved_type = raw_type if raw_type in ("text", "long_text", "foxhole_order") else "text"
 
         try:
-            max_len = int(self.max_length.value.strip()) if self.max_length.value.strip() else 1024
-            max_len = max(1, min(1024, max_len))
+            default_max = 4000 if resolved_type == "foxhole_order" else 1024
+            max_len = int(self.max_length.value.strip()) if self.max_length.value.strip() else default_max
+            max_len = max(1, min(4000, max_len))
         except ValueError:
-            max_len = 1024
+            max_len = 4000 if resolved_type == "foxhole_order" else 1024
 
         required_raw = self.is_required.value.strip().lower()
         required = required_raw not in ("нет", "no", "false", "0", "н")
