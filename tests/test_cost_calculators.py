@@ -24,7 +24,7 @@ def test_mpf_max_discount_batch_and_rounding():
 
 
 def test_vehicle_mpf_uses_vehicle_crates(catalog):
-    bardiche = next(item for item in catalog if item.is_vehicle)
+    bardiche = next(item for item in catalog if "bardiche" in item.api_name.casefold())
     cost, crates = MPFCostCalculator().reference_cost(bardiche)
     assert crates == 5
     assert cost == {"rmat": 1979}

@@ -14,6 +14,8 @@ def test_resolves_russian_aliases_typos_and_api_name(catalog):
         "762": "Патроны 7.62 мм",
         "7.62": "Патроны 7.62 мм",
         "7 62": "Патроны 7.62 мм",
+        "фальшионов": "Фальшион",
+        "фальшев": "Фальшион",
     }
     for query, name in expected.items():
         result = resolver.resolve(query)

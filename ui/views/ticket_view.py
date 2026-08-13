@@ -372,12 +372,6 @@ async def _finish_ticket_creation(
             t.message_id = ticket_msg.id
             await session.commit()
 
-    for order_embed in EmbedBuilder.ticket_order_embeds(order_items):
-        try:
-            await channel.send(embed=order_embed)
-        except discord.HTTPException as exc:
-            logger.warning("Failed to send an order embed for ticket %d: %s", ticket_id, exc)
-
     await channel.send(
         embed=discord.Embed(
             description=f"Заявка **#{ticket_number:04d}** создана. Ожидайте ответа.",

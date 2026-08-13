@@ -51,6 +51,23 @@ SEED_ITEMS = (
         "mpf_max_crates": 9,
     },
     {
+        "api_id": "foxholehq:falchion",
+        "api_name": '85K-b "Falchion"',
+        "ru_name": "Фальшион",
+        "aliases": [
+            "фальшион", "фальшионы", "фальшиона", "фальшионов", "фальш",
+            "фальши", "фальшев", "falchion",
+        ],
+        "category": "vehicles",
+        "is_vehicle": True,
+        "crate_size": 3,
+        "vehicle_crate_size": 3,
+        "factory_site": "Garage",
+        "factory_cost": {"rmat": 135},
+        "mpf_available": True,
+        "mpf_max_crates": 5,
+    },
+    {
         "api_id": "86k-a-bardiche",
         "api_name": '86K-a "Bardiche"',
         "ru_name": "Бардиш",

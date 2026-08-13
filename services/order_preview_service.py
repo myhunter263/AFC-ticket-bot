@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 
-from config import config
 from services.cost_calculators import MPFCostCalculator, ProductionCostCalculator
 from services.foxhole_types import (
     CatalogItem,
@@ -13,6 +12,7 @@ from services.foxhole_types import (
     UnresolvedOrderItem,
 )
 from services.item_resolver import ItemResolver
+from services.normalized_order_builder import NormalizedOrderBuilder
 from services.order_parser import OrderParser
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,7 @@ class OrderPreviewService:
         self.parser = OrderParser()
         self.production = ProductionCostCalculator()
         self.mpf = MPFCostCalculator()
+        self.builder = NormalizedOrderBuilder()
 
     def parse(self, text: str) -> ParsedOrder:
         items: list[OrderItem] = []
@@ -70,42 +71,11 @@ class OrderPreviewService:
             mpf_crates=mpf_crates,
         )
 
-    @staticmethod
-    def _resources(cost: dict[str, int]) -> str:
-        if not cost:
-            return "недоступно"
-        return ", ".join(
-            f"{amount:,} {config.FOXHOLE_RESOURCE_LABELS.get(resource, resource.upper())}".replace(",", " ")
-            for resource, amount in cost.items()
-        )
-
     def format_item(self, order_item: OrderItem) -> str:
-        item = order_item.resolved.item
-        unit = "шт." if item.is_vehicle else "ящиков"
-        standard = self._resources(order_item.factory_cost)
-        if item.is_vehicle:
-            standard_text = f"{standard} в {self._site_ru(item.factory_site)} за шт."
-        else:
-            standard_text = f"{standard} на {self._site_ru(item.factory_site)} за ящик"
-        if order_item.mpf_cost:
-            mpf_text = f"{self._resources(order_item.mpf_cost)} на MPF за {order_item.mpf_crates} ящиков"
-        else:
-            mpf_text = "MPF недоступно"
-        marker = "⚠️" if order_item.resolved.requires_confirmation else "✅"
-        return (
-            f"{marker} **{item.ru_name}** — {order_item.quantity} {unit}\n"
-            f"({standard_text} / {mpf_text})"
-        )
+        return self.builder.format_item(order_item, preview=True)
 
     def format_order(self, order: ParsedOrder) -> str:
-        lines = [self.format_item(item) for item in order.items]
-        for unresolved in order.unresolved:
-            lines.append(f"❓ Не удалось определить «{unresolved.line.query}»")
-        return "\n\n".join(lines) or "В заказе не найдено позиций вида «количество + название»."
-
-    @staticmethod
-    def _site_ru(site: str | None) -> str:
-        return {"factory": "фабрике", "garage": "гараже"}.get((site or "").casefold(), site or "производстве")
+        return self.builder.format_order(order, preview=True)
 
     def snapshots(self, order: ParsedOrder) -> list[dict]:
         return [

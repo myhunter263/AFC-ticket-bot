@@ -6,6 +6,7 @@ from typing import Optional
 import discord
 
 from config import config
+from services.normalized_order_builder import NormalizedOrderBuilder
 
 
 class EmbedBuilder:
@@ -89,6 +90,14 @@ class EmbedBuilder:
                 value = value if len(value) <= 1024 else value[:1021] + "..."
                 embed.add_field(name=label, value=value, inline=False)
 
+        normalized_order = NormalizedOrderBuilder().format_snapshots(order_items)
+        for index, value in enumerate(NormalizedOrderBuilder.split_fields(normalized_order)):
+            embed.add_field(
+                name="Заказ Foxhole" if index == 0 else "Заказ Foxhole · продолжение",
+                value=value,
+                inline=False,
+            )
+
         created_ts = int(ticket.created_at.timestamp())
         embed.add_field(name="Создана", value=f"<t:{created_ts}:F>", inline=True)
 
@@ -99,67 +108,6 @@ class EmbedBuilder:
         embed.set_footer(text=f"ID: {ticket.id}")
         embed.timestamp = datetime.datetime.utcnow()
         return embed
-
-    @staticmethod
-    def _format_resources(resources: dict) -> str:
-        if not resources:
-            return "недоступно"
-        return ", ".join(
-            f"{amount:,} {config.FOXHOLE_RESOURCE_LABELS.get(resource, resource.upper())}".replace(",", " ")
-            for resource, amount in resources.items()
-        )
-
-    @staticmethod
-    def ticket_order_embeds(order_items: list | None) -> list[discord.Embed]:
-        if not order_items:
-            return []
-        lines: list[str] = []
-        for item in order_items:
-            if isinstance(item, dict):
-                name = item["display_name"]
-                quantity = item["quantity"]
-                unit = item["unit"]
-                snapshot = item.get("cost_snapshot") or {}
-            else:
-                name = item.display_name
-                quantity = item.quantity
-                unit = item.unit
-                snapshot = item.cost_snapshot or {}
-            unit_label = "шт." if unit == "item" else "ящиков"
-            standard = EmbedBuilder._format_resources(snapshot.get("factory", {}))
-            site = {"Factory": "фабрике", "Garage": "гараже"}.get(
-                snapshot.get("factory_site"), snapshot.get("factory_site") or "производстве"
-            )
-            mpf = EmbedBuilder._format_resources(snapshot.get("mpf", {}))
-            mpf_crates = snapshot.get("mpf_crates", 0)
-            mpf_text = (
-                f"{mpf} на MPF за {mpf_crates} ящиков"
-                if mpf_crates else "MPF недоступно"
-            )
-            lines.append(
-                f"• **{name}** — {quantity} {unit_label}\n"
-                f"  ({standard} на {site} / {mpf_text})"
-            )
-
-        pages: list[str] = []
-        current = ""
-        for line in lines:
-            candidate = f"{current}\n\n{line}" if current else line
-            if len(candidate) > 4000 and current:
-                pages.append(current)
-                current = line
-            else:
-                current = candidate
-        if current:
-            pages.append(current)
-        return [
-            discord.Embed(
-                title="Заказ Foxhole" if index == 0 else "Заказ Foxhole · продолжение",
-                description=page,
-                color=config.COLOR_PRIMARY,
-            )
-            for index, page in enumerate(pages[:9])
-        ]
 
     @staticmethod
     def panel_embed(
