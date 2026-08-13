@@ -386,6 +386,15 @@ class AdminCog(commands.Cog):
         data = RecipeAuditService.item_debug(resolved.item)
         standard = data["standard"] or {}
         mpf = data["mpf"] or {}
+        breakdown_lines = []
+        labels = config.FOXHOLE_RESOURCE_LABELS
+        for resource, rows in data["mpf_breakdown"].items():
+            label = labels.get(resource, resource.upper())
+            breakdown_lines.extend(
+                f"#{row['position']} {row['percent']}% → {row['cost']} {label}"
+                for row in rows
+            )
+        breakdown_text = "\n".join(breakdown_lines) or "недоступно"
         description = (
             f"**Item:** {data['name']} (`{data['api_name']}`)\n"
             f"**FoxholeHQ ID:** `{data['api_id']}`\n\n"
@@ -396,6 +405,7 @@ class AdminCog(commands.Cog):
             f"Vehicles per crate: `{(mpf.get('raw_data') or {}).get('vehicles_per_crate') or '—'}`\n"
             f"Max queue: `{data['mpf_queues']}`\n"
             f"Max queue cost: `{data['mpf_max_queue_cost'] or '—'}`\n\n"
+            f"**Расчёт MPF по позициям:**\n{breakdown_text}\n\n"
             f"**Source:** `{data['source']} {data['source_version'] or ''}`\n"
             f"**Local override:** `{'да' if data['overrides'] else 'нет'}`\n"
             f"**Validation:** `{data['validation']}`"

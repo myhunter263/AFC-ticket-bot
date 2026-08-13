@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import math
-
 from services.foxhole_types import CatalogItem
 
 
@@ -20,12 +18,32 @@ class ProductionCostCalculator:
 
 class MPFCostCalculator:
     @staticmethod
-    def _discounted_total(base_per_crate: int, crates: int) -> int:
-        # FoxholeHQ applies 90%, 80%, ... 50% and rounds every queue up.
-        return sum(
-            math.ceil(base_per_crate * max(0.5, 0.9 - 0.1 * index))
-            for index in range(crates)
-        )
+    def material_breakdown(base_per_crate: int, crates: int) -> list[dict[str, int]]:
+        if base_per_crate < 0 or crates < 0:
+            raise ValueError("MPF base cost and crate count cannot be negative")
+        return [
+            {
+                "position": position,
+                "percent": max(50, 100 - position * 10),
+                "cost": base_per_crate * max(50, 100 - position * 10) // 100,
+            }
+            for position in range(1, crates + 1)
+        ]
+
+    @classmethod
+    def calculate_mpf_material_cost(cls, base_per_crate: int, crates: int) -> int:
+        return sum(row["cost"] for row in cls.material_breakdown(base_per_crate, crates))
+
+    @classmethod
+    def calculate_mpf_cost(
+        cls,
+        base_cost: dict[str, int],
+        crate_count: int,
+    ) -> dict[str, int]:
+        return {
+            resource: cls.calculate_mpf_material_cost(amount, crate_count)
+            for resource, amount in _positive_cost(base_cost).items()
+        }
 
     def reference_cost(self, item: CatalogItem) -> tuple[dict[str, int], int]:
         if not item.mpf_available:
@@ -35,11 +53,7 @@ class MPFCostCalculator:
             resource: amount * (item.vehicle_crate_size if item.is_vehicle else 1)
             for resource, amount in _positive_cost(item.factory_cost).items()
         }
-        result = {
-            resource: self._discounted_total(amount, crates)
-            for resource, amount in _positive_cost(base_cost).items()
-        }
-        return result, crates
+        return self.calculate_mpf_cost(base_cost, crates), crates
 
 
 class OrderCostCalculator:

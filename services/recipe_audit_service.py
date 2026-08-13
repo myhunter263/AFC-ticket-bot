@@ -127,7 +127,12 @@ class RecipeAuditService:
 
     @staticmethod
     def item_debug(item: CatalogItem) -> dict[str, Any]:
-        mpf_cost, queues = MPFCostCalculator().reference_cost(item)
+        calculator = MPFCostCalculator()
+        mpf_cost, queues = calculator.reference_cost(item)
+        mpf_breakdown = {
+            resource: calculator.material_breakdown(amount, queues)
+            for resource, amount in item.mpf_base_cost.items()
+        }
         return {
             "name": item.ru_name,
             "api_name": item.api_name,
@@ -138,6 +143,7 @@ class RecipeAuditService:
             "mpf": item.recipe_details.get("mpf"),
             "mpf_max_queue_cost": mpf_cost,
             "mpf_queues": queues,
+            "mpf_breakdown": mpf_breakdown,
             "source": item.source,
             "source_version": item.source_version,
             "overrides": item.overrides,

@@ -102,7 +102,7 @@ SEED_ITEMS = _load_seed_items()
 
 
 class ItemCatalogService:
-    SEED_VERSION = 2
+    SEED_VERSION = 3
 
     @staticmethod
     async def _upsert_seed_aliases(

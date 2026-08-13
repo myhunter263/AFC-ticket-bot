@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from config import config
 from services.foxhole_types import OrderItem, ParsedOrder
 from services.resource_cost_formatter import ResourceCostFormatter
+
+logger = logging.getLogger(__name__)
 
 
 class NormalizedOrderBuilder:
@@ -43,10 +46,17 @@ class NormalizedOrderBuilder:
         marker = ""
         if preview:
             marker = "⚠️ " if order_item.resolved.requires_confirmation else "✅ "
-        return (
+        rendered = (
             f"{marker}**{item.ru_name}** — {order_item.quantity} {unit}\n"
             f"({standard_text} / {mpf_text})"
         )
+        logger.debug(
+            "[MPF DEBUG] item=%s value_passed=%s rendered=%s",
+            item.api_id,
+            order_item.mpf_cost,
+            rendered,
+        )
+        return rendered
 
     def format_order(self, order: ParsedOrder, *, preview: bool = False) -> str:
         lines = [self.format_item(item, preview=preview) for item in order.items]
@@ -80,10 +90,17 @@ class NormalizedOrderBuilder:
             if mpf_crates
             else "MPF недоступно"
         )
-        return (
+        rendered = (
             f"• **{name}** — {quantity} {unit_label}\n"
             f"  ({standard} {preposition} {site}{suffix} / {mpf_text})"
         )
+        logger.debug(
+            "[MPF DEBUG] snapshot_name=%s value_passed=%s rendered=%s",
+            name,
+            snapshot.get("mpf"),
+            rendered,
+        )
+        return rendered
 
     def format_snapshots(self, rows: list | None) -> str:
         return "\n\n".join(self.format_snapshot(row) for row in rows or [])

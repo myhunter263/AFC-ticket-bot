@@ -61,6 +61,20 @@ class OrderPreviewService:
     def _make_item(self, quantity: int, query: str, resolved: ResolvedItem) -> OrderItem:
         item = resolved.item
         mpf_cost, mpf_crates = self.mpf.reference_cost(item)
+        if mpf_cost:
+            traces = {
+                resource: self.mpf.material_breakdown(amount, mpf_crates)
+                for resource, amount in item.mpf_base_cost.items()
+            }
+            logger.debug(
+                "[MPF DEBUG] item=%s id=%s base=%s crates=%d breakdown=%s total=%s",
+                item.api_name,
+                item.api_id,
+                item.mpf_base_cost,
+                mpf_crates,
+                traces,
+                mpf_cost,
+            )
         return OrderItem(
             quantity=quantity,
             unit="item" if item.is_vehicle else "crate",

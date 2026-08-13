@@ -18,8 +18,8 @@ def test_mpf_max_discount_batch_and_rounding():
     cost, crates = MPFCostCalculator().reference_cost(item)
     assert crates == 9
     assert cost == {
-        "bmat": sum(__import__("math").ceil(101 * max(0.5, 0.9 - index * 0.1)) for index in range(9)),
-        "rmat": sum(__import__("math").ceil(21 * max(0.5, 0.9 - index * 0.1)) for index in range(9)),
+        "bmat": sum(101 * max(50, 100 - position * 10) // 100 for position in range(1, 10)),
+        "rmat": sum(21 * max(50, 100 - position * 10) // 100 for position in range(1, 10)),
     }
 
 
@@ -27,4 +27,16 @@ def test_vehicle_mpf_uses_vehicle_crates(catalog):
     bardiche = next(item for item in catalog if "bardiche" in item.api_name.casefold())
     cost, crates = MPFCostCalculator().reference_cost(bardiche)
     assert crates == 5
-    assert cost == {"rmat": 1734}
+    assert cost == {"rmat": 1731}
+
+
+def test_mpf_golden_costs_for_dusk_and_xiphos():
+    calculator = MPFCostCalculator()
+    assert calculator.calculate_mpf_cost({"rmat": 15}, 9) == {"rmat": 79}
+    assert calculator.calculate_mpf_cost({"rmat": 75}, 5) == {"rmat": 261}
+    assert [row["cost"] for row in calculator.material_breakdown(15, 9)] == [
+        13, 12, 10, 9, 7, 7, 7, 7, 7,
+    ]
+    assert [row["cost"] for row in calculator.material_breakdown(75, 5)] == [
+        67, 60, 52, 45, 37,
+    ]

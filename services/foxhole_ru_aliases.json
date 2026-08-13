@@ -95,7 +95,7 @@
   {"api_id":"foxholehq:actaeon","api_name":"T12 \"Actaeon\" Tankette","ru_name":"Актеон","alias_type":"transliteration","priority":105,"aliases":["актеон","танкетка","actaeon"]},
   {"api_id":"foxholehq:javelin","api_name":"HH-a \"Javelin\"","ru_name":"Джавелин","alias_type":"transliteration","priority":105,"aliases":["джавелин","жавелин","javelin"]},
   {"api_id":"foxholehq:spire","api_name":"King Spire Mk. I","ru_name":"Кинг Спайр","alias_type":"slang","priority":105,"aliases":["кинг спайр","спайр","spire"]},
-  {"api_id":"foxholehq:xiphos","api_name":"T3 \"Xiphos\"","ru_name":"Ксифос","alias_type":"transliteration","priority":105,"aliases":["ксифос","ксифа","xiphos"]},
+  {"api_id":"foxholehq:xiphos","api_name":"T3 \"Xiphos\"","ru_name":"Ксифос","alias_type":"transliteration","priority":105,"aliases":["ксифос","ксифоса","ксифосы","ксифосов","ксифа","xiphos"]},
   {"api_id":"foxholehq:niska","api_name":"Niska Mk. I Gun Motor Carriage","ru_name":"Ниска","alias_type":"transliteration","priority":105,"aliases":["ниска","niska"]},
   {"api_id":"foxholehq:obrien","api_name":"O'Brien V.110","ru_name":"О'Брайен","alias_type":"transliteration","priority":105,"aliases":["обрайен","обриен","o brien","obrien"]},
   {"api_id":"foxholehq:knave","api_name":"O'Brien V.190 Knave","ru_name":"Нейв","alias_type":"transliteration","priority":105,"aliases":["нейв","кнейв","knave"]},
