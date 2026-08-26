@@ -1,0 +1,1 @@
+"""Configurable self-role panels."""

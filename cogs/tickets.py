@@ -20,37 +20,6 @@ class TicketsCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    async def cog_load(self) -> None:
-        await self._restore_persistent_views()
-
-    async def _restore_persistent_views(self) -> None:
-        async with async_session_maker() as session:
-            from sqlalchemy import select
-            from database.models import TicketPanel, Ticket
-
-            result = await session.execute(
-                select(TicketPanel).where(TicketPanel.is_active == True)
-            )
-            panels = result.scalars().all()
-            for panel in panels:
-                view = TicketPanelButtonView(panel.id, panel.button_label, panel.button_emoji)
-                if panel.panel_message_id is not None:
-                    self.bot.add_view(view, message_id=panel.panel_message_id)
-
-            result = await session.execute(
-                select(Ticket).where(Ticket.ticket_message_id.is_not(None))
-            )
-            tickets = result.scalars().all()
-            for ticket in tickets:
-                view = TicketView(ticket_id=ticket.id, guild_id=ticket.guild_id)
-                self.bot.add_view(view, message_id=ticket.ticket_message_id)
-
-        logger.info(
-            "Restored %d panel views and %d ticket views.",
-            len(panels),
-            len(tickets),
-        )
-
     @app_commands.command(name="afc-add", description="[AFC] Добавить пользователя в тикет")
     @app_commands.guild_only()
     async def add_user(self, interaction: discord.Interaction, member: discord.Member) -> None:

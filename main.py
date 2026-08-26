@@ -8,6 +8,7 @@ import discord
 from discord.ext import commands
 
 from config import config
+from core.command_sync import sync_commands_to_guild
 from database.session import init_db
 from utils.error_handler import setup_error_handler
 
@@ -26,6 +27,9 @@ COGS = [
     "cogs.admin",
     "cogs.tickets",
     "cogs.points",
+    "modules.roles.commands",
+    "modules.recruitment.commands",
+    "modules.calculator.commands",
 ]
 
 
@@ -41,6 +45,7 @@ class TicketBot(commands.Bot):
             intents=intents,
             help_command=None,
         )
+        self._command_synced_guild_ids: set[int] = set()
 
     async def setup_hook(self) -> None:
         logger.info("Initializing database...")
@@ -54,14 +59,16 @@ class TicketBot(commands.Bot):
             except Exception as exc:
                 logger.error("Failed to load cog %s: %s", cog, exc, exc_info=True)
 
+        from core.persistent_views import PersistentViewRegistry
+
+        await PersistentViewRegistry.restore(self)
+
+        # Global registration makes commands available on every server. The
+        # configured guild is additionally updated immediately for development.
+        synced = await self.tree.sync()
+        logger.info("Synced %d global commands", len(synced))
         if config.DISCORD_GUILD_ID:
-            guild = discord.Object(id=config.DISCORD_GUILD_ID)
-            self.tree.copy_global_to(guild=guild)
-            synced = await self.tree.sync(guild=guild)
-            logger.info("Synced %d commands to guild %d", len(synced), config.DISCORD_GUILD_ID)
-        else:
-            synced = await self.tree.sync()
-            logger.info("Synced %d global commands", len(synced))
+            await self.sync_commands_for_guild(config.DISCORD_GUILD_ID)
 
         setup_error_handler(self)
         logger.info("Bot setup complete.")
@@ -79,6 +86,22 @@ class TicketBot(commands.Bot):
                 name="заявки | /admin",
             )
         )
+        # setup_hook runs before the guild cache is populated. Publish guild
+        # commands once after READY as well, so existing secondary servers do
+        # not have to wait for Discord's global-command propagation.
+        for guild in self.guilds:
+            if guild.id in self._command_synced_guild_ids:
+                continue
+            try:
+                await self.sync_commands_for_guild(guild.id)
+            except discord.HTTPException:
+                logger.exception("Failed to sync commands to guild %d", guild.id)
+
+    async def sync_commands_for_guild(self, guild_id: int) -> list:
+        synced = await sync_commands_to_guild(self, guild_id)
+        self._command_synced_guild_ids.add(guild_id)
+        logger.info("Synced %d commands to guild %d", len(synced), guild_id)
+        return synced
 
     async def on_guild_join(self, guild: discord.Guild) -> None:
         from database.session import async_session_maker
@@ -90,6 +113,10 @@ class TicketBot(commands.Bot):
             await StatusService.ensure_defaults(session, guild.id)
             await session.commit()
 
+        try:
+            await self.sync_commands_for_guild(guild.id)
+        except discord.HTTPException:
+            logger.exception("Failed to sync commands for new guild %d", guild.id)
         logger.info("Joined guild: %s (ID: %d)", guild.name, guild.id)
 
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:

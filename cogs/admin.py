@@ -9,6 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from core.command_sync import sync_commands_to_guild
 from database.session import async_session_maker
 from config import config
 from services.ticket_service import TicketService
@@ -43,14 +44,14 @@ class AdminCog(commands.Cog):
             try:
                 async with async_session_maker() as session:
                     status = await ItemSyncService.status(session, guild.id)
-                    last_attempt = status["last_attempt_at"]
+                    last_success = status["last_success_at"]
                     due_after = datetime.timedelta(
                         hours=max(1, config.FOXHOLEHQ_SYNC_INTERVAL_HOURS)
                     )
                     now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
                     if (
-                        last_attempt
-                        and now - last_attempt < due_after
+                        last_success
+                        and now - last_success < due_after
                         and status["resource_count"] >= 4
                     ):
                         await ItemSyncService.ensure_localizations(session, guild.id)
@@ -142,7 +143,7 @@ class AdminCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        synced = await self.bot.tree.sync(guild=interaction.guild)
+        synced = await sync_commands_to_guild(self.bot, interaction.guild)
         await interaction.followup.send(
             embed=EmbedBuilder.success("Команды синхронизированы", f"Синхронизировано {len(synced)} команд."),
             ephemeral=True,

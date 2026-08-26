@@ -52,8 +52,9 @@ class RecipeAuditService:
             if item["mpf_available"] and not mpf:
                 report.mpf_anomalies += 1
                 report.errors.append(f"{item['api_name']}: отсутствует MPF-рецепт")
-            if item["is_vehicle"] and standard:
-                row = standard[0]
+            hq_standard = [row for row in standard if row.get("source", "foxholehq") == "foxholehq"]
+            if item["is_vehicle"] and hq_standard:
+                row = hq_standard[0]
                 if row["output_quantity"] != 1 or row["output_unit"] != "vehicle":
                     report.garage_anomalies += 1
                     report.errors.append(f"{item['api_name']}: неверная единица Garage")
@@ -69,8 +70,8 @@ class RecipeAuditService:
                 if int(item.get("mpf_max_crates") or 0) != 5:
                     report.mpf_anomalies += 1
                     report.errors.append(f"{item['api_name']}: EQUIPMENT MPF-очередь не равна 5")
-                if not item["is_vehicle"] and standard:
-                    if standard[0]["output_unit"] != "equipment":
+                if not item["is_vehicle"] and hq_standard:
+                    if hq_standard[0]["output_unit"] != "equipment":
                         report.factory_anomalies += 1
                         report.errors.append(f"{item['api_name']}: неверная единица EQUIPMENT")
                 if not item["is_vehicle"] and mpf:
@@ -88,9 +89,9 @@ class RecipeAuditService:
         if not materials:
             report.errors.append(f"{recipe.get('api_id')}: пустая цена {method}")
         for resource, amount in materials.items():
-            if resource not in cls.KNOWN_RESOURCES:
+            if resource not in cls.KNOWN_RESOURCES and recipe.get("source", "foxholehq") == "foxholehq":
                 report.errors.append(f"{recipe.get('api_id')}: неизвестный ресурс {resource}")
-            if not isinstance(amount, int) or amount <= 0:
+            if not isinstance(amount, (int, float)) or amount <= 0:
                 report.errors.append(f"{recipe.get('api_id')}: неверная цена {resource}={amount}")
         if method == "mpf" and recipe.get("output_unit") not in {
             "crate", "vehicle_crate", "equipment_crate"
@@ -118,7 +119,7 @@ class RecipeAuditService:
                 "production_group": item.production_group,
                 "mpf_available": item.mpf_available,
                 "mpf_max_crates": item.mpf_max_crates,
-            } for item in items if item.source == "foxholehq"],
+            } for item in items],
             recipes=[{
                 "api_id": item.api_id,
                 "production_method": recipe.production_method,
@@ -126,7 +127,8 @@ class RecipeAuditService:
                 "output_unit": recipe.output_unit,
                 "materials": recipe.materials,
                 "raw_data": recipe.raw_data,
-            } for item in items if item.source == "foxholehq" for recipe in item.production_recipes],
+                "source": recipe.source,
+            } for item in items for recipe in item.production_recipes],
             categories=[], source_version="database", source_updated_at=None,
             dataset_hash="database", resource_crate_sizes=resource_sizes,
         )
@@ -186,6 +188,12 @@ class RecipeAuditService:
                 report.warnings.append(f"{item.api_name}: предмет удалён из dataset")
                 continue
             for old_recipe in item.production_recipes:
+                # FoxholeHQ is the strict primary contract. Supplementary Wiki
+                # recipes may legitimately appear or disappear as infoboxes are
+                # completed, so their absence must not reject an otherwise valid
+                # primary catalog refresh.
+                if old_recipe.source != "foxholehq":
+                    continue
                 new_recipe = incoming_recipes.get((item.api_id, old_recipe.production_method))
                 if new_recipe is None:
                     report.errors.append(

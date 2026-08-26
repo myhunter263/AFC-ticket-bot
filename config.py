@@ -34,6 +34,12 @@ class Config:
         os.getenv("FOXHOLEHQ_SYNC_INTERVAL_HOURS", "24")
     )
     FOXHOLEHQ_MIN_ITEMS: int = int(os.getenv("FOXHOLEHQ_MIN_ITEMS", "100"))
+    FOXHOLE_WIKI_ENABLED: bool = os.getenv("FOXHOLE_WIKI_ENABLED", "true").casefold() in {
+        "1", "true", "yes", "on",
+    }
+    FOXHOLE_WIKI_API_URL: str = os.getenv(
+        "FOXHOLE_WIKI_API_URL", "https://foxhole.wiki.gg/api.php"
+    )
     FOXHOLE_RESOLVE_AUTO_THRESHOLD: int = int(
         os.getenv("FOXHOLE_RESOLVE_AUTO_THRESHOLD", "90")
     )
@@ -45,6 +51,13 @@ class Config:
         "rmat": os.getenv("FOXHOLE_RESOURCE_RMAT", "RMat"),
         "emat": os.getenv("FOXHOLE_RESOURCE_EMAT", "EMat"),
         "hemat": os.getenv("FOXHOLE_RESOURCE_HEMAT", "HEMat"),
+        "processed_construction_materials": "PCon",
+        "construction_materials": "CMat",
+        "assembly_materials_i": "AM1",
+        "assembly_materials_ii": "AM2",
+        "assembly_materials_iii": "AM3",
+        "assembly_materials_iv": "AM4",
+        "assembly_materials_v": "AM5",
     }
     FOXHOLE_RESOURCE_COST_DISPLAY: str = os.getenv("FOXHOLE_RESOURCE_COST_DISPLAY", "both")
 

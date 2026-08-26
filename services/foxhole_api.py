@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import abc
+import asyncio
 import datetime
 import hashlib
 import html
@@ -10,6 +11,7 @@ import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Any
+from urllib.parse import urljoin
 
 import aiohttp
 
@@ -34,6 +36,7 @@ class FoxholeDataset:
     source_updated_at: datetime.datetime | None
     dataset_hash: str
     resource_crate_sizes: dict[str, int] | None = None
+    supplementary_complete: bool = True
 
 
 class FoxholeDataProvider(abc.ABC):
@@ -60,12 +63,30 @@ class _FactoryPageParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.items: list[dict[str, str]] = []
+        self._current_item: dict[str, str] | None = None
+        self._item_div_depth = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         values = {key: value or "" for key, value in attrs}
         classes = set(values.get("class", "").split())
         if tag == "div" and "item" in classes and values.get("id"):
             self.items.append(values)
+            self._current_item = values
+            self._item_div_depth = 1
+        elif self._current_item is not None and tag == "div":
+            self._item_div_depth += 1
+        elif self._current_item is not None and tag in {"source", "img"}:
+            image_path = values.get("srcset") or values.get("src")
+            if image_path and "assets/imgs/" in image_path and not self._current_item.get("image_path"):
+                self._current_item["image_path"] = image_path
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._current_item is None or tag != "div":
+            return
+        self._item_div_depth -= 1
+        if self._item_div_depth <= 0:
+            self._current_item = None
+            self._item_div_depth = 0
 
 
 class FoxholeHQDataProvider(FoxholeDataProvider):
@@ -114,25 +135,44 @@ class FoxholeHQDataProvider(FoxholeDataProvider):
         headers = {"User-Agent": "AFC-Ticket-Bot/2.1 (FoxholeHQ catalogue sync)"}
         try:
             async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-                async with session.get(f"{self.base_url}{self.FACTORY_PATH}") as response:
-                    response.raise_for_status()
-                    page = await response.text()
+                page = await self._get_text(session, f"{self.base_url}{self.FACTORY_PATH}")
                 script_match = self._SCRIPT.search(page)
                 if not script_match:
                     raise FoxholeDataError("FoxholeHQ не указал скрипт с размерами ящиков ресурсов")
                 script_url = script_match.group(1)
                 if not script_url.startswith("http"):
                     script_url = f"{self.base_url}/{script_url.lstrip('/')}"
-                async with session.get(script_url) as response:
-                    response.raise_for_status()
-                    script = await response.text()
+                script = await self._get_text(session, script_url)
         except (aiohttp.ClientError, TimeoutError, UnicodeError) as exc:
             raise FoxholeDataError(f"FoxholeHQ недоступен: {exc}") from exc
         return self.parse_page(page, script)
 
+    @staticmethod
+    async def _get_text(session: aiohttp.ClientSession, url: str) -> str:
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                async with session.get(url) as response:
+                    if response.status == 429 or response.status >= 500:
+                        last_error = FoxholeDataError(f"HTTP {response.status} for {url}")
+                        retry_after = response.headers.get("Retry-After")
+                        if attempt < 2:
+                            await asyncio.sleep(float(retry_after) if retry_after else 2 ** attempt)
+                            continue
+                    response.raise_for_status()
+                    return await response.text()
+            except (aiohttp.ClientError, TimeoutError, UnicodeError) as exc:
+                last_error = exc
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+        raise FoxholeDataError(f"FoxholeHQ недоступен: {last_error}")
+
     def parse_page(self, page: str, script: str = "") -> FoxholeDataset:
         parser = _FactoryPageParser()
         parser.feed(page)
+        for row in parser.items:
+            if row.get("image_path"):
+                row["image_url"] = urljoin(f"{self.base_url}/", row["image_path"])
         version, updated_at = self._parse_version(page)
         resource_crate_sizes = self._parse_resource_crates(script)
         items, recipes = self._normalize(parser.items, version, updated_at)
@@ -267,6 +307,7 @@ class FoxholeHQDataProvider(FoxholeDataProvider):
                 "source_updated_at": updated_at.isoformat() if updated_at else None,
                 "upstream_fingerprint": fingerprint,
                 "raw_data": raw_data,
+                "image_url": row.get("image_url") or None,
             }
             items.append(item)
             recipes.append({
@@ -289,6 +330,10 @@ class FoxholeHQDataProvider(FoxholeDataProvider):
                         if is_vehicle and crate_size > 1 else "unchanged"
                     ),
                 },
+                "building": standard_method,
+                "recipe_kind": "standard",
+                "source": cls.SOURCE,
+                "source_version": version,
             })
             if mpf_available:
                 recipes.append({
@@ -310,6 +355,10 @@ class FoxholeHQDataProvider(FoxholeDataProvider):
                         "crates_per_mpf_queue": 5 if is_vehicle else 9,
                         "normalization": "unchanged",
                     },
+                    "building": "Mass Production Factory",
+                    "recipe_kind": "mpf",
+                    "source": cls.SOURCE,
+                    "source_version": version,
                 })
         items.sort(key=lambda value: value["api_id"])
         recipes.sort(key=lambda value: (value["api_id"], value["production_method"]))

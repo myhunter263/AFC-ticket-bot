@@ -87,8 +87,9 @@ POSTGRES_DB=ticketbot
 POSTGRES_HOST=db
 ```
 
-> `DISCORD_GUILD_ID` — ID вашего Discord-сервера (для быстрой синхронизации команд).
-> Если оставить пустым — команды зарегистрируются глобально (до 1 часа задержки).
+> `DISCORD_GUILD_ID` — ID основного Discord-сервера для быстрой синхронизации.
+> Он не ограничивает бота одним сервером: команды также регистрируются глобально
+> и немедленно синхронизируются на каждом сервере, где присутствует бот.
 
 Ограничить права на файл:
 
@@ -205,12 +206,16 @@ docker compose logs --tail=100 bot | grep -E "Running upgrade|Database initializ
 docker compose exec -T db psql -U ticketbot ticketbot -c "SELECT version_num FROM alembic_version;"
 ```
 
-Ожидаемая версия Alembic: `004`.
+Ожидаемая версия Alembic: `009`.
+Миграция `009` добавляет метаданные рецептов калькулятора и таблицу ручных
+recipe overrides. Она не изменяет существующие заказы Foxhole; миграция `008`
+по-прежнему отвечает за таблицы Self Roles и Recruitment.
 
-После запуска выполните в Discord `/afc-items-refresh`, затем проверьте
-`/afc-foxhole-status`. Первая команда импортирует текущий FoxholeHQ dataset,
-вторая должна показать источник `FoxholeHQ`, версию, количество предметов и
-рецептов. `/afc-foxhole-untranslated` покажет новые позиции для перевода.
+После запуска выполните в Discord `/afc-items-refresh` (или `/calc-admin` →
+**Обновить cache**), затем проверьте `/afc-foxhole-status`. Первая команда
+импортирует FoxholeHQ и дополнительный Facility/rail dataset Foxhole Wiki,
+вторая должна показать обе версии, количество предметов и рецептов.
+`/afc-foxhole-untranslated` покажет новые позиции для перевода.
 
 > **Важно:** `docker compose up -d --no-deps bot` перезапускает только бота.
 > PostgreSQL и все данные остаются нетронутыми.

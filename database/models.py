@@ -43,6 +43,9 @@ class Guild(Base):
     foxhole_localizations: Mapped[List["FoxholeItemLocalization"]] = relationship(
         back_populates="guild", cascade="all, delete-orphan"
     )
+    foxhole_recipe_overrides: Mapped[List["FoxholeRecipeOverride"]] = relationship(
+        back_populates="guild", cascade="all, delete-orphan"
+    )
     unknown_item_queries: Mapped[List["UnknownItemQuery"]] = relationship(
         back_populates="guild", cascade="all, delete-orphan"
     )
@@ -51,6 +54,15 @@ class Guild(Base):
     )
     log_settings: Mapped[Optional["LogSettings"]] = relationship(
         back_populates="guild", cascade="all, delete-orphan", uselist=False
+    )
+    role_panels: Mapped[List["RolePanel"]] = relationship(
+        back_populates="guild", cascade="all, delete-orphan"
+    )
+    recruitment_settings: Mapped[Optional["RecruitmentSettings"]] = relationship(
+        back_populates="guild", cascade="all, delete-orphan", uselist=False
+    )
+    recruitment_applications: Mapped[List["RecruitmentApplication"]] = relationship(
+        back_populates="guild", cascade="all, delete-orphan"
     )
 
 
@@ -265,6 +277,145 @@ class LogSettings(Base):
     guild: Mapped["Guild"] = relationship(back_populates="log_settings")
 
 
+class RolePanel(Base):
+    __tablename__ = "role_panels"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("guilds.id", ondelete="CASCADE"), index=True
+    )
+    panel_channel_id: Mapped[int] = mapped_column(BigInteger)
+    panel_message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    title: Mapped[str] = mapped_column(String(100))
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    color: Mapped[int] = mapped_column(Integer, default=0x5865F2)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    guild: Mapped["Guild"] = relationship(back_populates="role_panels")
+    items: Mapped[List["RolePanelItem"]] = relationship(
+        back_populates="panel",
+        cascade="all, delete-orphan",
+        order_by="RolePanelItem.position",
+    )
+
+
+class RolePanelItem(Base):
+    __tablename__ = "role_panel_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    panel_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("role_panels.id", ondelete="CASCADE"), index=True
+    )
+    role_id: Mapped[int] = mapped_column(BigInteger)
+    label: Mapped[str] = mapped_column(String(80))
+    emoji: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    rules: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
+    panel: Mapped["RolePanel"] = relationship(back_populates="items")
+
+    __table_args__ = (UniqueConstraint("panel_id", "role_id", name="uq_role_panel_role"),)
+
+
+class RecruitmentSettings(Base):
+    __tablename__ = "recruitment_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("guilds.id", ondelete="CASCADE"), unique=True
+    )
+    panel_channel_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    panel_message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    ticket_category_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    accepted_role_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    panel_title: Mapped[str] = mapped_column(String(100), default="Вступление в клан")
+    panel_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    button_label: Mapped[str] = mapped_column(String(80), default="Подать заявку")
+    button_emoji: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    channel_name_template: Mapped[str] = mapped_column(
+        String(100), default="recruit-{application_id}"
+    )
+    allow_multiple_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    guild: Mapped["Guild"] = relationship(back_populates="recruitment_settings")
+    questions: Mapped[List["RecruitmentQuestion"]] = relationship(
+        back_populates="settings",
+        cascade="all, delete-orphan",
+        order_by="RecruitmentQuestion.position",
+    )
+    staff_roles: Mapped[List["RecruitmentStaffRole"]] = relationship(
+        back_populates="settings", cascade="all, delete-orphan"
+    )
+
+
+class RecruitmentQuestion(Base):
+    __tablename__ = "recruitment_questions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    settings_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("recruitment_settings.id", ondelete="CASCADE"), index=True
+    )
+    label: Mapped[str] = mapped_column(String(45))
+    placeholder: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    input_style: Mapped[str] = mapped_column(String(20), default="short")
+    required: Mapped[bool] = mapped_column(Boolean, default=True)
+    min_length: Mapped[int] = mapped_column(Integer, default=0)
+    max_length: Mapped[int] = mapped_column(Integer, default=1024)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    settings: Mapped["RecruitmentSettings"] = relationship(back_populates="questions")
+
+
+class RecruitmentStaffRole(Base):
+    __tablename__ = "recruitment_staff_roles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    settings_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("recruitment_settings.id", ondelete="CASCADE"), index=True
+    )
+    role_id: Mapped[int] = mapped_column(BigInteger)
+
+    settings: Mapped["RecruitmentSettings"] = relationship(back_populates="staff_roles")
+
+    __table_args__ = (
+        UniqueConstraint("settings_id", "role_id", name="uq_recruitment_staff_role"),
+    )
+
+
+class RecruitmentApplication(Base):
+    __tablename__ = "recruitment_applications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("guilds.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    ticket_channel_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, nullable=True, unique=True
+    )
+    ticket_message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="PENDING", index=True)
+    reviewer_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    rejection_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    answers: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+    reviewed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+    closed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+
+    guild: Mapped["Guild"] = relationship(back_populates="recruitment_applications")
+
 class TicketAssignee(Base):
     __tablename__ = "ticket_assignees"
 
@@ -332,6 +483,7 @@ class FoxholeItem(Base):
     upstream_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     raw_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    image_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     synced_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
 
     localizations: Mapped[List["FoxholeItemLocalization"]] = relationship(
@@ -442,11 +594,48 @@ class FoxholeProductionRecipe(Base):
     output_unit: Mapped[str] = mapped_column(String(20), default="crate")
     materials: Mapped[dict] = mapped_column(JSON, default=dict)
     raw_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    building: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    recipe_kind: Mapped[str] = mapped_column(String(30), default="standard")
+    source: Mapped[str] = mapped_column(String(50), default="foxholehq")
+    source_version: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     item: Mapped["FoxholeItem"] = relationship(back_populates="production_recipes")
 
     __table_args__ = (
         UniqueConstraint("item_id", "production_method", name="uq_foxhole_recipe_method"),
+    )
+
+
+class FoxholeRecipeOverride(Base):
+    __tablename__ = "foxhole_recipe_overrides"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("guilds.id", ondelete="CASCADE"), index=True
+    )
+    item_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("foxhole_items.id", ondelete="CASCADE"), index=True
+    )
+    production_method: Mapped[str] = mapped_column(String(50))
+    building: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    materials: Mapped[dict] = mapped_column(JSON, default=dict)
+    output_quantity: Mapped[int] = mapped_column(Integer, default=1)
+    output_unit: Mapped[str] = mapped_column(String(20), default="item")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    guild: Mapped["Guild"] = relationship(back_populates="foxhole_recipe_overrides")
+    item: Mapped["FoxholeItem"] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint(
+            "guild_id", "item_id", "production_method",
+            name="uq_foxhole_recipe_override",
+        ),
     )
 
 

@@ -28,6 +28,8 @@ class CatalogItem:
     overrides: dict[str, Any] = field(default_factory=dict)
     resource_crate_sizes: dict[str, int] = field(default_factory=dict)
     recipe_details: dict[str, dict[str, Any]] = field(default_factory=dict)
+    image_url: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def is_equipment(self) -> bool:

@@ -391,9 +391,15 @@ class ItemCatalogService:
                         "output_unit": recipe.output_unit,
                         "materials": recipe.materials or {},
                         "raw_data": recipe.raw_data or {},
+                        "building": recipe.building,
+                        "recipe_kind": recipe.recipe_kind,
+                        "source": recipe.source,
+                        "source_version": recipe.source_version,
                     }
                     for method, recipe in recipes.items()
                 },
+                image_url=item.image_url,
+                metadata=item.raw_data or {},
             ))
         return catalog
 

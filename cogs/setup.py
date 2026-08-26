@@ -6,6 +6,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from core.command_sync import sync_commands_to_guild
 from database.session import async_session_maker
 from services.status_service import StatusService
 from services.ticket_service import TicketService
@@ -29,7 +30,7 @@ class SetupCog(commands.Cog):
             await StatusService.ensure_defaults(session, interaction.guild_id)
             await session.commit()
 
-        synced = await self.bot.tree.sync(guild=interaction.guild)
+        synced = await sync_commands_to_guild(self.bot, interaction.guild)
 
         embed = discord.Embed(
             title="✅ AFC Ticket Bot настроен",

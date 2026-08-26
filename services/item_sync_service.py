@@ -15,7 +15,8 @@ from database.models import (
     FoxholeResource,
     FoxholeSyncState,
 )
-from services.foxhole_api import FoxholeDataError, FoxholeDataProvider, FoxholeHQDataProvider
+from services.foxhole_api import FoxholeDataError, FoxholeDataProvider
+from services.foxhole_composite import CompositeFoxholeDataProvider
 from services.text_normalizer import TextNormalizer
 from services.recipe_audit_service import RecipeAuditService
 
@@ -52,7 +53,7 @@ class ItemSyncService:
         state = await cls._state(session)
         state.last_attempt_at = now
         try:
-            dataset = await (provider or FoxholeHQDataProvider()).fetch_dataset()
+            dataset = await (provider or CompositeFoxholeDataProvider()).fetch_dataset()
         except FoxholeDataError as exc:
             state.last_error = str(exc)[:4000]
             await session.flush()
@@ -87,6 +88,20 @@ class ItemSyncService:
         existing = list((await session.execute(
             select(FoxholeItem).options(selectinload(FoxholeItem.production_recipes))
         )).scalars().all())
+        has_supplementary_cache = any(
+            item.source == "foxholewiki"
+            or any(recipe.source == "foxholewiki" for recipe in item.production_recipes)
+            for item in existing
+        )
+        if not dataset.supplementary_complete and has_supplementary_cache:
+            message = (
+                "Foxhole Wiki временно недоступна; полный последний cache сохранён "
+                "без изменений"
+            )
+            state.last_error = message
+            await session.flush()
+            logger.warning(message)
+            return ItemSyncResult(success=False, error=message)
         comparison = RecipeAuditService.compare_with_existing(existing, dataset)
         if comparison.errors:
             message = "FoxholeHQ update отклонён: " + "; ".join(comparison.errors[:10])
@@ -135,7 +150,7 @@ class ItemSyncService:
                 "api_id", "api_name", "category", "faction", "is_vehicle", "production_group", "crate_size",
                 "amount_produced", "vehicle_crate_size", "factory_site", "factory_cost",
                 "mpf_available", "mpf_max_crates", "source", "source_version",
-                "upstream_fingerprint", "raw_data",
+                "upstream_fingerprint", "raw_data", "image_url",
             ):
                 setattr(item, field, data[field])
             item.source_updated_at = source_updated_at
@@ -148,7 +163,7 @@ class ItemSyncService:
 
         deactivated = 0
         for item in existing:
-            if item.source == cls.SOURCE and item.id not in seen and item.is_active:
+            if item.source in {cls.SOURCE, "foxholewiki"} and item.id not in seen and item.is_active:
                 item.is_active = False
                 deactivated += 1
 
@@ -169,6 +184,10 @@ class ItemSyncService:
                 output_unit=recipe["output_unit"],
                 materials=recipe["materials"],
                 raw_data=recipe.get("raw_data"),
+                building=recipe.get("building"),
+                recipe_kind=recipe.get("recipe_kind", "standard"),
+                source=recipe.get("source", cls.SOURCE),
+                source_version=recipe.get("source_version", dataset.source_version),
             ))
 
         await cls._sync_resources(session, dataset, now)
@@ -245,6 +264,7 @@ class ItemSyncService:
             item.dataset_hash = dataset.dataset_hash
             item.is_active = True
             item.raw_data = {"resource_key": key, "crate_size": crate_size}
+            item.image_url = None
             item.synced_at = now
         await session.flush()
 

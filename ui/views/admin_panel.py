@@ -237,6 +237,89 @@ class AdminPanelView(discord.ui.View):
             embed=embed, view=ItemCatalogView(self.guild_id), ephemeral=True
         )
 
+    @discord.ui.button(label="Foxhole Calculator", style=discord.ButtonStyle.primary, emoji="🧮", row=3)
+    async def manage_calculator(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        from modules.calculator.admin import CalculatorAdminView
+        from services.item_sync_service import ItemSyncService
+
+        async with async_session_maker() as session:
+            if not await PermissionChecker.is_bot_admin(interaction, session):
+                await interaction.response.send_message(
+                    embed=EmbedBuilder.error("Нет доступа"), ephemeral=True
+                )
+                return
+            status = await ItemSyncService.status(session, self.guild_id)
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="Foxhole Calculator",
+                description=(
+                    f"Версия: **{status['source_version'] or 'не загружена'}**\n"
+                    f"Предметов: **{status['item_count']}** · рецептов: **{status['recipe_count']}**"
+                ),
+                color=config.COLOR_PRIMARY,
+            ),
+            view=CalculatorAdminView(self.guild_id),
+            ephemeral=True,
+        )
+
+    @discord.ui.button(
+        label="Панели самовыдачи ролей",
+        style=discord.ButtonStyle.primary,
+        emoji="🎭",
+        row=4,
+    )
+    async def manage_role_panels(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        from modules.roles.admin import RolePanelAdminView
+        from modules.roles.service import RolePanelService
+
+        async with async_session_maker() as session:
+            if not await PermissionChecker.is_bot_admin(interaction, session):
+                await interaction.response.send_message(
+                    embed=EmbedBuilder.error("Нет доступа"), ephemeral=True
+                )
+                return
+            panels = await RolePanelService.list_panels(session, self.guild_id)
+        await interaction.response.send_message(
+            embed=EmbedBuilder.info(
+                "Панели самовыдачи ролей",
+                f"Настроено панелей: **{len(panels)}**.",
+            ),
+            view=RolePanelAdminView(self.guild_id),
+            ephemeral=True,
+        )
+
+    @discord.ui.button(
+        label="Вступление в клан",
+        style=discord.ButtonStyle.success,
+        emoji="🛡️",
+        row=4,
+    )
+    async def manage_recruitment(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        from modules.recruitment.admin import RecruitmentAdminView, settings_embed
+        from modules.recruitment.service import RecruitmentService
+
+        async with async_session_maker() as session:
+            if not await PermissionChecker.is_bot_admin(interaction, session):
+                await interaction.response.send_message(
+                    embed=EmbedBuilder.error("Нет доступа"), ephemeral=True
+                )
+                return
+            settings = await RecruitmentService.get_or_create_settings(session, self.guild_id)
+            await session.commit()
+            settings_id = settings.id
+            embed = settings_embed(settings)
+        await interaction.response.send_message(
+            embed=embed,
+            view=RecruitmentAdminView(self.guild_id, settings_id),
+            ephemeral=True,
+        )
+
 
 class PanelManageView(discord.ui.View):
     def __init__(self, guild_id: int) -> None:

@@ -6,7 +6,7 @@ import discord
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database.models import StaffRole
+from database.models import RecruitmentSettings, RecruitmentStaffRole, StaffRole
 
 
 class PermissionChecker:
@@ -85,3 +85,28 @@ class PermissionChecker:
         if interaction.user.id == ticket.author_id:
             return True
         return await PermissionChecker.is_staff(interaction, session, ticket.panel_id)
+
+    @staticmethod
+    async def is_recruitment_staff(
+        interaction: discord.Interaction,
+        session: AsyncSession,
+    ) -> bool:
+        """Centralized recruitment permission check for every management action."""
+        if interaction.guild_id is None or not isinstance(interaction.user, discord.Member):
+            return False
+        if interaction.user.guild_permissions.administrator:
+            return True
+        settings_id = await session.scalar(
+            select(RecruitmentSettings.id).where(
+                RecruitmentSettings.guild_id == interaction.guild_id
+            )
+        )
+        if settings_id is None:
+            return False
+        result = await session.execute(
+            select(RecruitmentStaffRole.role_id).where(
+                RecruitmentStaffRole.settings_id == settings_id
+            )
+        )
+        allowed_role_ids = set(result.scalars().all())
+        return any(role.id in allowed_role_ids for role in interaction.user.roles)

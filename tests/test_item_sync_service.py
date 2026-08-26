@@ -8,6 +8,7 @@ from database.models import (
     FoxholeItem,
     FoxholeItemAlias,
     FoxholeItemLocalization,
+    FoxholeProductionRecipe,
     Guild,
     Ticket,
     TicketOrderItem,
@@ -53,6 +54,34 @@ async def test_sync_is_noop_for_same_hash_and_preserves_local_data(db_session):
     localization = (await db_session.execute(select(FoxholeItemLocalization))).scalar_one()
     assert localization.ru_name == "Винтовка"
     assert (await db_session.execute(select(FoxholeItemAlias))).scalar_one().alias == "винтарь"
+
+
+@pytest.mark.asyncio
+async def test_incomplete_supplementary_refresh_preserves_facility_cache(db_session):
+    items, recipes = normalized_dataset()
+    recipes.append({
+        "api_id": items[0]["api_id"],
+        "production_method": "wiki_facility",
+        "output_quantity": 1,
+        "output_unit": "crate",
+        "materials": {"construction_materials": 5},
+        "raw_data": {},
+        "building": "Ammunition Factory",
+        "recipe_kind": "facility",
+        "source": "foxholewiki",
+        "source_version": "Foxhole test",
+    })
+    await ItemSyncService.sync(db_session, 1, StaticProvider(items, recipes, "full"))
+    await db_session.commit()
+
+    incomplete = StaticProvider(items, recipes[:-1], "primary-only")
+    incomplete.dataset.supplementary_complete = False
+    result = await ItemSyncService.sync(db_session, 1, incomplete)
+    await db_session.commit()
+
+    assert not result.success
+    stored = list((await db_session.execute(select(FoxholeProductionRecipe))).scalars())
+    assert any(recipe.source == "foxholewiki" for recipe in stored)
 
 
 @pytest.mark.asyncio
