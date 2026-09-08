@@ -229,6 +229,7 @@ class FoxholeWikiDataProvider:
             fields.get("shippable_size", ""), fields.get("type", ""),
         )).casefold()
         is_large = is_vehicle or any(marker in profile for marker in ("large", "vehicle", "locomotive", "car"))
+        is_material = fields.get("type", "").casefold() in {"material", "resource"}
         crate_size = int(cls._number(fields.get("crate_amount"), 1))
         image = fields.get("image")
         image_url = (
@@ -284,6 +285,12 @@ class FoxholeWikiDataProvider:
                 resource_key = cls.resource_key(material_name)
                 materials[resource_key] = materials.get(resource_key, 0) + amount
                 labels[resource_key] = re.sub(r"\[\[|\]\]", "", material_name).split("|")[-1]
+            # Vehicle upgrades consume a base vehicle, outside InputItemN fields.
+            base_vehicle = fields.get(prefix + "InputVehicle")
+            if base_vehicle:
+                key = cls.resource_key(base_vehicle)
+                materials[key] = materials.get(key, 0) + cls._number(fields.get(prefix + "InputVehicleAmount"), 1)
+                labels[key] = re.sub(r"\[\[|\]\]", "", base_vehicle).split("|")[-1]
             if not building or not materials:
                 continue
             method = f"wiki_prd{index}_{TextNormalizer.compact(building)[:28]}"[:50]
@@ -291,7 +298,7 @@ class FoxholeWikiDataProvider:
                 "api_id": api_id,
                 "production_method": method,
                 "output_quantity": int(cls._number(fields.get(prefix + "OutputAmount"), 1)),
-                "output_unit": "item" if is_large else "crate",
+                "output_unit": "item" if is_large or is_material else "crate",
                 "materials": materials,
                 "building": building,
                 "recipe_kind": "facility",

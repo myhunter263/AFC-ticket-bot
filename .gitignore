@@ -7,8 +7,11 @@ __pycache__/
 dist/
 build/
 .venv/
+.venv-*/
+.ruff_cache/
 venv/
 *.log
 transcripts/
 backups/
 .DS_Store
+.tools/

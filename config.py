@@ -5,7 +5,7 @@ load_dotenv()
 
 
 class Config:
-    DISCORD_TOKEN: str = os.environ["DISCORD_TOKEN"]
+    DISCORD_TOKEN: str = os.getenv("DISCORD_TOKEN", "")
     DISCORD_GUILD_ID: int | None = (
         int(os.environ["DISCORD_GUILD_ID"]) if os.environ.get("DISCORD_GUILD_ID") else None
     )
@@ -14,19 +14,16 @@ class Config:
     POSTGRES_PORT: int = int(os.getenv("POSTGRES_PORT", "5432"))
     POSTGRES_DB: str = os.getenv("POSTGRES_DB", "ticketbot")
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", "ticketbot")
-    POSTGRES_PASSWORD: str = os.environ["POSTGRES_PASSWORD"]
+    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "")
 
-    # DATABASE_URL всегда строится из POSTGRES_* переменных.
-    # Никогда не читаем из env напрямую — это исключает ошибку
-    # когда DATABASE_URL в .env содержит старый или неверный пароль.
     @property
     def DATABASE_URL(self) -> str:
-        return (
-            f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
-            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
-        )
+        from database.settings import database_url
+        return database_url()
 
     BOT_PREFIX: str = os.getenv("BOT_PREFIX", "!")
+    BACKEND_URL: str = os.getenv("BACKEND_URL", "")
+    BACKEND_TOKEN: str = os.getenv("BACKEND_TOKEN", "")
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     MAX_TICKETS_PER_USER: int = int(os.getenv("MAX_TICKETS_PER_USER", "5"))
     FOXHOLEHQ_BASE_URL: str = os.getenv("FOXHOLEHQ_BASE_URL", "https://foxholehq.net").rstrip("/")

@@ -67,7 +67,7 @@ class NormalizedOrderBuilder:
     def format_item(self, order_item: OrderItem, *, preview: bool = False) -> str:
         item = order_item.resolved.item
         is_equipment = item.is_equipment
-        unit = "\u0448\u0442." if is_equipment else "\u044f\u0449\u0438\u043a\u043e\u0432"
+        unit = "\u0448\u0442." if order_item.unit == "item" else "\u044f\u0449\u0438\u043a\u043e\u0432"
         marker = ""
         if preview:
             marker = "\u26a0\ufe0f " if order_item.resolved.requires_confirmation else "\u2705 "
@@ -121,7 +121,7 @@ class NormalizedOrderBuilder:
         crate_sizes = snapshot.get("resource_crate_sizes") or {}
         fac_line, mpf_line = self._price_lines(
             name=name,
-            is_equipment=is_equipment,
+            is_equipment=snapshot.get("reference_unit", unit) == "item",
             factory_cost=snapshot.get("factory"),
             mpf_cost=snapshot.get("mpf"),
             mpf_crates=snapshot.get("mpf_crates", 0),

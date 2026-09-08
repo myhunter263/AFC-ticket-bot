@@ -77,6 +77,17 @@ def test_acceptance_free_form_orders(catalog, text, quantities, names):
     assert [item.resolved.item.ru_name for item in order.items] == names
 
 
-def test_units_are_normalized_even_when_user_omits_or_misstates_them(catalog):
+def test_explicit_units_are_preserved(catalog):
     order = OrderPreviewService(catalog).parse("15 ящиков фальшионов\n15 аргенти")
-    assert [item.unit for item in order.items] == ["item", "crate"]
+    assert [item.unit for item in order.items] == ["crate", "crate"]
+
+
+def test_individual_ammunition_survives_snapshot_and_display(catalog):
+    service = OrderPreviewService(catalog)
+    order = service.parse("10 шт аргенти\n10 ящиков аргенти")
+    assert [row.unit for row in order.items] == ["item", "crate"]
+    snapshots = service.snapshots(order)
+    assert [row["unit"] for row in snapshots] == ["item", "crate"]
+    assert snapshots[0]["cost_snapshot"]["reference_unit"] == "crate"
+    assert "10 шт." in service.format_order(order)
+    assert "10 шт." in service.builder.format_snapshot(snapshots[0])

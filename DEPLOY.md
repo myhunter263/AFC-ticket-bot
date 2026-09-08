@@ -188,11 +188,8 @@ git pull origin main
 # Перейти в папку проекта
 cd discord-ticket-bot
 
-# Пересобрать только образ бота (БД не останавливается и не трогается)
-docker compose build bot
-
-# Перезапустить только контейнер бота
-docker compose up -d --no-deps bot
+# Собрать приложения и применить миграции перед запуском
+docker compose up -d --build
 
 # Убедиться, что всё запустилось
 docker compose ps
@@ -202,14 +199,13 @@ docker compose logs --tail=30 bot
 После обновления проверьте миграцию и запуск:
 
 ```bash
-docker compose logs --tail=100 bot | grep -E "Running upgrade|Database initialized|Bot is ready|ERROR"
+docker compose logs --tail=100 migrate backend bot | grep -E "Running upgrade|Database ready|Bot is ready|ERROR"
 docker compose exec -T db psql -U ticketbot ticketbot -c "SELECT version_num FROM alembic_version;"
 ```
 
-Ожидаемая версия Alembic: `009`.
-Миграция `009` добавляет метаданные рецептов калькулятора и таблицу ручных
-recipe overrides. Она не изменяет существующие заказы Foxhole; миграция `008`
-по-прежнему отвечает за таблицы Self Roles и Recruitment.
+Ожидаемая версия Alembic: `014`. Миграции `010`–`014` добавляют авторизацию,
+CRM-заказы, события, задания Discord, связи ролей, склад и производство. Старые таблицы тикетов,
+Self Roles, Recruitment и каталога сохраняются.
 
 После запуска выполните в Discord `/afc-items-refresh` (или `/calc-admin` →
 **Обновить cache**), затем проверьте `/afc-foxhole-status`. Первая команда
@@ -217,8 +213,8 @@ recipe overrides. Она не изменяет существующие зака
 вторая должна показать обе версии, количество предметов и рецептов.
 `/afc-foxhole-untranslated` покажет новые позиции для перевода.
 
-> **Важно:** `docker compose up -d --no-deps bot` перезапускает только бота.
-> PostgreSQL и все данные остаются нетронутыми.
+> Для обновления CRM используйте весь Compose: запуск только `bot` с `--no-deps`
+> пропустит обязательный сервис миграций. Существующий volume PostgreSQL сохраняется.
 
 ---
 
@@ -318,12 +314,9 @@ jobs:
             cd /opt/AFC-ticket-bot
             git pull origin main
 
-            echo "==> Rebuilding bot image..."
+            echo "==> Building applications and migrating..."
             cd discord-ticket-bot
-            docker compose build bot
-
-            echo "==> Restarting bot container..."
-            docker compose up -d --no-deps bot
+            docker compose up -d --build
 
             echo "==> Checking status..."
             docker compose ps
@@ -442,9 +435,16 @@ docker compose logs -f bot
 | Остановить | `docker compose down` |
 | Перезапустить бота | `docker compose restart bot` |
 | Логи бота | `docker compose logs -f bot` |
-| Обновить из GitHub | `cd /opt/AFC-ticket-bot && git pull && cd discord-ticket-bot && docker compose build bot && docker compose up -d --no-deps bot` |
+| Обновить из GitHub | `cd /opt/AFC-ticket-bot && git pull && cd discord-ticket-bot && docker compose up -d --build` |
 | Сделать бэкап БД | `docker compose exec -T db pg_dump -U ticketbot ticketbot > /opt/backups/db_$(date +%Y%m%d).sql` |
 | Войти в PostgreSQL | `docker compose exec db psql -U ticketbot ticketbot` |
 | Статус контейнеров | `docker compose ps` |
 
 > Все команды выполняются из директории `/opt/AFC-ticket-bot/discord-ticket-bot`
+
+## Дополнение: backend и CRM
+
+Новая схема Compose содержит `migrate` и `backend` в дополнение к `db` и `bot`.
+Миграции выполняются перед запуском приложений. Настройка сервисного токена,
+подключение Desktop и HTTPS/SSH описаны в [docs/CRM.md](docs/CRM.md).
+Существующий `.env` и volume PostgreSQL необходимо сохранить.

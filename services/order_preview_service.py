@@ -35,7 +35,7 @@ class OrderPreviewService:
             if isinstance(result, ResolvedItemCandidates):
                 unresolved.append(UnresolvedOrderItem(line=line, result=result))
                 continue
-            items.append(self._make_item(line.quantity, line.query, result))
+            items.append(self._make_item(line.quantity, line.query, result, line.requested_unit))
         return ParsedOrder(items=items, unresolved=unresolved)
 
     def choose_candidate(self, order: ParsedOrder, unresolved_index: int, item_id: int) -> None:
@@ -56,9 +56,15 @@ class OrderPreviewService:
             unresolved.line.query,
             candidate.item.api_name,
         )
-        order.items.append(self._make_item(unresolved.line.quantity, unresolved.line.query, candidate))
+        order.items.append(self._make_item(
+            unresolved.line.quantity, unresolved.line.query, candidate,
+            unresolved.line.requested_unit,
+        ))
 
-    def _make_item(self, quantity: int, query: str, resolved: ResolvedItem) -> OrderItem:
+    def _make_item(
+        self, quantity: int, query: str, resolved: ResolvedItem,
+        requested_unit: str | None = None,
+    ) -> OrderItem:
         item = resolved.item
         mpf_cost, mpf_crates = self.mpf.reference_cost(item)
         if mpf_cost:
@@ -77,7 +83,7 @@ class OrderPreviewService:
             )
         return OrderItem(
             quantity=quantity,
-            unit="item" if item.is_equipment else "crate",
+            unit=requested_unit or ("item" if item.is_equipment else "crate"),
             query=query,
             resolved=resolved,
             factory_cost=self.production.reference_cost(item),
@@ -102,6 +108,8 @@ class OrderPreviewService:
                 "confidence": row.resolved.confidence,
                 "matched_by": row.resolved.matched_by,
                 "cost_snapshot": {
+                    "api_id": row.resolved.item.api_id,
+                    "reference_unit": "item" if row.resolved.item.is_equipment else "crate",
                     "item_display_name": row.resolved.item.ru_name,
                     "factory": row.factory_cost,
                     "factory_site": row.resolved.item.factory_site,

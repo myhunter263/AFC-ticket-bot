@@ -3,6 +3,10 @@
 Discord-бот для заявок игрового сообщества Foxhole. Работает на `discord.py`,
 PostgreSQL и Docker Compose.
 
+Добавлены FastAPI backend и PySide6 CRM: постоянная панель заказов Discord,
+Kanban, история, права, WebSocket и общий калькулятор. Инструкция подключения,
+выпуска токенов, тестирования и текущие ограничения: [docs/CRM.md](docs/CRM.md).
+
 Бот состоит из независимых модулей Foxhole Orders, Foxhole Calculator,
 Self Roles и Recruitment. Общие permissions, audit log и реестр persistent views
 используются всеми модулями.

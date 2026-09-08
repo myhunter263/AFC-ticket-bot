@@ -36,6 +36,8 @@ class ProductionCalculation:
     queues: list[int] = field(default_factory=list)
     material_labels: dict[str, str] = field(default_factory=dict)
     reference_costs: dict[int, dict[str, Number]] = field(default_factory=dict)
+    base_resources: dict[str, Number] | None = None
+    unresolved_resources: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

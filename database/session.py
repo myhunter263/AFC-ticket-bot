@@ -48,71 +48,38 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
-    retries = 10
-    delay = 3
+    """Legacy standalone bot may migrate; Compose runs a single migration service."""
+    import os
+    from pathlib import Path
 
-    logger.info("Database URL target: %s", config.DATABASE_URL.split("@")[-1])
-
-    for attempt in range(1, retries + 1):
+    migrate = os.getenv("DB_MIGRATE_ON_STARTUP", "true").lower() in {"1", "true", "yes"}
+    for attempt in range(10):
         try:
             async with engine.begin() as conn:
-                has_guilds = await conn.scalar(text("SELECT to_regclass('public.guilds')"))
-                has_version = await conn.scalar(text("SELECT to_regclass('public.alembic_version')"))
-                if has_guilds:
-                    if not has_version:
-                        await conn.execute(text(
-                            "CREATE TABLE alembic_version (version_num VARCHAR(32) PRIMARY KEY)"
-                        ))
-                    current_version = await conn.scalar(text(
-                        "SELECT version_num FROM alembic_version LIMIT 1"
-                    ))
-                    if not current_version:
-                        await conn.execute(text(
-                            "INSERT INTO alembic_version (version_num) VALUES ('002')"
-                        ))
-
-            process = await asyncio.create_subprocess_exec(
-                sys.executable,
-                "-m",
-                "alembic",
-                "upgrade",
-                "head",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await process.communicate()
-            if process.returncode:
-                raise RuntimeError(stderr.decode("utf-8", errors="replace"))
-            if stdout:
-                logger.info(stdout.decode("utf-8", errors="replace").strip())
-            logger.info("Database initialized successfully.")
-            return
-        except Exception as exc:
-            # Обходим цепочку исключений — SQLAlchemy оборачивает asyncpg-ошибки
-            cause: Optional[BaseException] = exc
-            while cause is not None:
-                if isinstance(cause, _FATAL_DB_ERRORS):
-                    logger.error(
-                        "FATAL: Authentication failed for user '%s'. "
-                        "Check POSTGRES_PASSWORD in .env — it must match the password "
-                        "with which the database volume was created. "
-                        "To reset: docker compose down -v && docker compose up -d",
-                        config.POSTGRES_USER,
+                await conn.execute(text("SELECT 1"))
+                if migrate:
+                    await conn.execute(text("SELECT pg_advisory_xact_lock(7410090)"))
+                    has_guilds = await conn.scalar(text("SELECT to_regclass('public.guilds')"))
+                    has_version = await conn.scalar(text("SELECT to_regclass('public.alembic_version')"))
+                    if has_guilds and not has_version:
+                        raise RuntimeError("Existing database has no Alembic revision; inspect and stamp it explicitly before upgrading")
+                    process = await asyncio.create_subprocess_exec(
+                        sys.executable, "-m", "alembic", "upgrade", "head",
+                        cwd=str(Path(__file__).resolve().parents[1]),
+                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                     )
-                    raise SystemExit(1) from exc
-                next_cause = getattr(cause, "__cause__", None) or getattr(cause, "__context__", None)
-                if next_cause is cause:
-                    break
-                cause = next_cause
-
-            logger.warning(
-                "Database not ready (attempt %d/%d): %s. Retrying in %ds...",
-                attempt,
-                retries,
-                exc,
-                delay,
-            )
-            if attempt == retries:
-                logger.error("Could not connect to database after %d attempts.", retries)
+                    stdout, stderr = await process.communicate()
+                    if process.returncode:
+                        logger.error("Migration process failed; run alembic upgrade head for diagnostics")
+                        raise RuntimeError("Database migration failed")
+                else:
+                    await conn.execute(text("SELECT version_num FROM alembic_version"))
+            logger.info("Database ready")
+            return
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            if attempt == 9:
                 raise
-            await asyncio.sleep(delay)
+            logger.warning("Database unavailable (%s); retry %s/10", type(exc).__name__, attempt + 1)
+            await asyncio.sleep(3)

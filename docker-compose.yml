@@ -28,12 +28,66 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     env_file:
       - .env
     environment:
       POSTGRES_HOST: db
+      DATABASE_URL_MODE: components
+      DB_MIGRATE_ON_STARTUP: "false"
     volumes:
       - ./logs:/app/logs
+    networks:
+      - botnet
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB:-ticketbot}
+      POSTGRES_USER: ${POSTGRES_USER:-ticketbot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DATABASE_URL_MODE: components
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - botnet
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB:-ticketbot}
+      POSTGRES_USER: ${POSTGRES_USER:-ticketbot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DATABASE_URL_MODE: components
+      FOXHOLEHQ_BASE_URL: ${FOXHOLEHQ_BASE_URL:-https://foxholehq.net}
+      FOXHOLEHQ_SYNC_INTERVAL_HOURS: ${FOXHOLEHQ_SYNC_INTERVAL_HOURS:-24}
+      FOXHOLE_WIKI_ENABLED: ${FOXHOLE_WIKI_ENABLED:-true}
+      BACKEND_CATALOG_SYNC: "true"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5)"]
+      interval: 15s
+      timeout: 6s
+      retries: 5
     networks:
       - botnet
     logging:

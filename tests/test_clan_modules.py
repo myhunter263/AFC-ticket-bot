@@ -72,7 +72,8 @@ def test_role_above_bot_is_rejected():
         RolePanelService.validate_assignable(fake_guild(role, bot_position=10), role)
 
 
-def test_recruitment_form_is_split_into_five_field_pages():
+@pytest.mark.asyncio
+async def test_recruitment_form_is_split_into_five_field_pages():
     questions = [
         {
             "id": index,
@@ -91,7 +92,8 @@ def test_recruitment_form_is_split_into_five_field_pages():
     assert len(RecruitmentPageModal(state, 5).children) == 2
 
 
-def test_recruitment_review_buttons_follow_application_state():
+@pytest.mark.asyncio
+async def test_recruitment_review_buttons_follow_application_state():
     pending = RecruitmentTicketView(1, 1)
     accepted = RecruitmentTicketView(1, 1, status="ACCEPTED")
     closed = RecruitmentTicketView(1, 1, status="REJECTED", closed=True)

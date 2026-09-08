@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from services.foxhole_types import CatalogItem
+from services.calculator.mpf import MPFCalculator
 
 
 def _positive_cost(cost: dict[str, int | float]) -> dict[str, int]:
@@ -19,16 +20,7 @@ class ProductionCostCalculator:
 class MPFCostCalculator:
     @staticmethod
     def material_breakdown(base_per_crate: int, crates: int) -> list[dict[str, int]]:
-        if base_per_crate < 0 or crates < 0:
-            raise ValueError("MPF base cost and crate count cannot be negative")
-        return [
-            {
-                "position": position,
-                "percent": max(50, 100 - position * 10),
-                "cost": base_per_crate * max(50, 100 - position * 10) // 100,
-            }
-            for position in range(1, crates + 1)
-        ]
+        return MPFCalculator.material_breakdown(base_per_crate, crates)
 
     @classmethod
     def calculate_mpf_material_cost(cls, base_per_crate: int, crates: int) -> int:

@@ -30,6 +30,7 @@ COGS = [
     "modules.roles.commands",
     "modules.recruitment.commands",
     "modules.calculator.commands",
+    "modules.orders.commands",
 ]
 
 
@@ -146,6 +147,8 @@ class TicketBot(commands.Bot):
 
 
 async def main() -> None:
+    if not config.DISCORD_TOKEN:
+        raise RuntimeError("DISCORD_TOKEN is required to start the bot")
     bot = TicketBot()
     async with bot:
         await bot.start(config.DISCORD_TOKEN)

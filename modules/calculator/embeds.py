@@ -50,6 +50,10 @@ def method_embed(result: ItemCalculation, method: ProductionCalculation, index: 
             )
     if method.notes:
         embed.add_field(name="Примечание", value="\n".join(method.notes)[:1024], inline=False)
+    if method.base_resources:
+        embed.add_field(name="Развёртка ресурсов", value=resource_lines(method.base_resources)[:1024], inline=False)
+    if method.unresolved_resources:
+        embed.add_field(name="Нужно уточнить цепочку", value="\n".join(f"{k}: {v}" for k, v in method.unresolved_resources.items())[:1024], inline=False)
     if result.unavailable_methods:
         embed.add_field(
             name="Без подтверждённой стоимости",
@@ -80,4 +84,3 @@ def calculation_embeds(result: ItemCalculation) -> list[discord.Embed]:
         method_embed(result, method, index, len(result.methods))
         for index, method in enumerate(result.methods, start=1)
     ]
-

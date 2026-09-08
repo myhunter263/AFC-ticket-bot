@@ -9,6 +9,15 @@ class MPFCalculator:
     MIN_CRATES = 3
 
     @staticmethod
+    def material_breakdown(base, crates):
+        if base < 0 or crates < 0:
+            raise ValueError("MPF base cost and crate count cannot be negative")
+        return [{"position": p, "percent": max(50, 100 - p * 10),
+                 "cost": math.floor(base * max(50, 100 - p * 10) / 100) if not isinstance(base, int)
+                 else base * max(50, 100 - p * 10) // 100}
+                for p in range(1, crates + 1)]
+
+    @staticmethod
     def split_queues(crate_count: int, max_crates: int) -> list[int]:
         if crate_count <= 0:
             raise ValueError("Количество MPF-ящиков должно быть положительным.")
@@ -33,12 +42,7 @@ class MPFCalculator:
     def queue_cost(materials: dict[str, int | float], crates: int) -> dict[str, int | float]:
         total: dict[str, int | float] = {}
         for resource, base in materials.items():
-            value = sum(
-                (base * max(50, 100 - position * 10)) // 100
-                if isinstance(base, int)
-                else math.floor(base * max(50, 100 - position * 10) / 100)
-                for position in range(1, crates + 1)
-            )
+            value = sum(row["cost"] for row in MPFCalculator.material_breakdown(base, crates))
             total[resource] = value
         return total
 

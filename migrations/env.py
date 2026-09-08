@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
 from database.models import Base
+from database import crm_models  # Register backend metadata for autogenerate.
+from database import operations_models  # Warehouse and production metadata.
 
 config = context.config
 
@@ -17,18 +19,11 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-DB_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+asyncpg://{user}:{password}@{host}:{port}/{db}".format(
-        user=os.getenv("POSTGRES_USER", "ticketbot"),
-        password=os.getenv("POSTGRES_PASSWORD", "password"),
-        host=os.getenv("POSTGRES_HOST", "db"),
-        port=os.getenv("POSTGRES_PORT", "5432"),
-        db=os.getenv("POSTGRES_DB", "ticketbot"),
-    ),
-)
+from database.settings import database_url
 
-config.set_main_option("sqlalchemy.url", DB_URL)
+# ConfigParser requires literal percent signs in URL-encoded passwords to be escaped.
+config.set_main_option("sqlalchemy.url", database_url().replace("%", "%%"))
+
 
 
 def run_migrations_offline() -> None:

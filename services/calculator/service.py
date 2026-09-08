@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 
 from database.models import FoxholeRecipeOverride
 from services.calculator.factory import FactoryCalculator
@@ -38,6 +39,17 @@ class CalculatorService:
             for key, data in item.recipe_details.items()
             if data.get("materials")
         }
+        # Keep existing per-guild item settings effective in the shared engine.
+        for key, recipe in list(recipes.items()):
+            if key == "mpf" or recipe.kind == "mpf":
+                if item.overrides.get("mpf_available") is False:
+                    recipes.pop(key)
+                elif "mpf_base_cost" in item.overrides:
+                    recipes[key] = replace(recipe, materials=dict(item.overrides["mpf_base_cost"]), source="manual_override")
+            elif "factory_cost" in item.overrides and (
+                key == "factory" or recipe.building.casefold() == (item.factory_site or "Factory").casefold()
+            ):
+                recipes[key] = replace(recipe, materials=dict(item.overrides["factory_cost"]), source="manual_override")
         for row in overrides or []:
             if not row.enabled:
                 recipes.pop(row.production_method, None)
@@ -65,10 +77,14 @@ class CalculatorService:
         item: CatalogItem,
         amount: int,
         overrides: list[FoxholeRecipeOverride] | None = None,
+        *,
+        unit: str | None = None,
     ) -> ItemCalculation:
         if amount < 1 or amount > 100_000:
             raise ValueError("Количество должно быть от 1 до 100000.")
-        unit = cls.calculation_unit(item)
+        unit = unit or cls.calculation_unit(item)
+        if unit not in {"item", "crate"}:
+            raise ValueError("Единица должна быть item или crate.")
         methods = []
         recipe_rows = cls.recipes(item, overrides)
         for recipe in recipe_rows:

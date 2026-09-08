@@ -10,6 +10,22 @@ from services.foxhole_types import CatalogItem
 from services.foxhole_wiki import FoxholeWikiDataProvider
 
 
+def test_legacy_price_overrides_reach_shared_engine_without_mutating_source():
+    item = CatalogItem(id=1, api_id="example", api_name="Example", ru_name="Example", aliases=[],
+        factory_site="Garage", overrides={"factory_cost": {"rmat": 10}, "mpf_available": False},
+        recipe_details={
+            "garage": {"building": "Garage", "materials": {"rmat": 100}},
+            "facility": {"building": "Assembly Station", "materials": {"pcon": 5}},
+            "mpf": {"materials": {"rmat": 300}},
+        })
+    recipes = {r.key: r for r in CalculatorService.recipes(item)}
+    assert recipes["garage"].materials == {"rmat": 10}
+    assert recipes["garage"].source == "manual_override"
+    assert recipes["facility"].materials == {"pcon": 5}
+    assert "mpf" not in recipes
+    assert item.recipe_details["garage"]["materials"] == {"rmat": 100}
+
+
 def recipe(**values):
     defaults = dict(
         key="factory", building="Factory", kind="standard",
@@ -212,3 +228,26 @@ def test_production_chain_expands_and_detects_cycles():
 
     with pytest.raises(ProductionChainError):
         expand_resources({"am4": 1}, recipes)
+
+
+def test_shared_intermediate_rounds_after_aggregating_demand():
+    recipes = {
+        "a": recipe(output_quantity=1, materials={"shared": 1}),
+        "b": recipe(output_quantity=1, materials={"shared": 1}),
+        "shared": recipe(output_quantity=2, materials={"raw": 10}),
+    }
+    assert expand_resources({"a": 1, "b": 1}, recipes) == {"raw": 10}
+
+
+def test_wiki_upgrade_includes_base_vehicle_and_material_output_is_uncrated():
+    item, recipes = FoxholeWikiDataProvider.normalize_page("Upgrade", {
+        "name": "Upgrade", "PRD1_Source": "Small Assembly Station", "PRD1_InputVehicle": "Base Tank",
+        "PRD1_InputItem1": "Construction Materials", "PRD1_InputItem1Amount": "5",
+    }, "Vehicle Infobox", "test")
+    assert recipes[0]["materials"]["base_tank"] == 1
+    _, materials = FoxholeWikiDataProvider.normalize_page("Construction Materials", {
+        "name": "Construction Materials", "type": "Material", "crate_amount": "20",
+        "PRD1_Source": "Materials Factory", "PRD1_InputItem1": "Salvage", "PRD1_InputItem1Amount": "10",
+    }, "Item Infobox", "test")
+    assert materials[0]["output_unit"] == "item"
+    assert materials[0]["output_quantity"] == 1

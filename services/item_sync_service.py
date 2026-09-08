@@ -4,7 +4,7 @@ import datetime
 import logging
 from dataclasses import dataclass
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -49,6 +49,9 @@ class ItemSyncService:
         guild_id: int,
         provider: FoxholeDataProvider | None = None,
     ) -> ItemSyncResult:
+        if session.bind is not None and session.bind.dialect.name == "postgresql":
+            if not await session.scalar(text("SELECT pg_try_advisory_xact_lock(7410091)")):
+                return ItemSyncResult(success=False, error="Каталог уже обновляется")
         now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
         state = await cls._state(session)
         state.last_attempt_at = now

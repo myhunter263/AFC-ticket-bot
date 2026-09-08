@@ -11,7 +11,9 @@ from modules.calculator.admin import CalculatorAdminView
 from modules.calculator.embeds import calculation_embeds
 from modules.calculator.views import CalculatorPaginationView, TrainBuilderView
 from services.calculator.service import CalculatorService
-from services.foxhole_types import ResolvedItem, ResolvedItemCandidates
+from services.calculator.models import ItemCalculation, ProductionCalculation
+from integrations.backend.client import BackendError
+from services.foxhole_types import ResolvedItem
 from services.item_catalog_service import ItemCatalogService
 from services.item_resolver import ItemResolver
 from services.item_sync_service import ItemSyncService
@@ -73,14 +75,21 @@ class CalculatorCog(commands.Cog):
                 ), ephemeral=True,
             )
             return
-        async with async_session_maker() as session:
-            overrides = list((await session.execute(select(FoxholeRecipeOverride).where(
-                FoxholeRecipeOverride.guild_id == interaction.guild_id,
-                FoxholeRecipeOverride.item_id == selected.id,
-            ))).scalars().all())
         try:
-            result = CalculatorService.calculate(selected, amount, overrides)
-        except ValueError as exc:
+            crm = self.bot.get_cog("OrdersCog")
+            if crm and crm.guild_id == interaction.guild_id:
+                payload = await crm.client.request("POST", "/api/v1/catalog/calculate", member=interaction.user,
+                    data={"item_id": selected.id, "quantity": amount, "unit": CalculatorService.calculation_unit(selected)})
+            else:
+                from services.calculator.planning import calculate_plan
+                async with async_session_maker() as session:
+                    catalog = await ItemCatalogService.get_catalog(session, interaction.guild_id)
+                    overrides = list((await session.scalars(select(FoxholeRecipeOverride).where(
+                        FoxholeRecipeOverride.guild_id == interaction.guild_id,
+                    ))).all())
+                payload = calculate_plan(selected, amount, catalog, overrides)
+            result = ItemCalculation(**{**payload, "methods": [ProductionCalculation(**m) for m in payload["methods"]]})
+        except (ValueError, BackendError) as exc:
             await interaction.followup.send(embed=EmbedBuilder.error("Расчёт невозможен", str(exc)), ephemeral=True)
             return
         embeds = calculation_embeds(result)
