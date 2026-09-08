@@ -126,7 +126,7 @@ class EmbedBuilder:
     @staticmethod
     def admin_panel_main() -> discord.Embed:
         embed = discord.Embed(
-            title="⚙️ AFC Ticket Bot — Панель управления",
+            title="⚙️ Hector Ticket Bot — Панель управления",
             description=(
                 "Добро пожаловать в панель администратора.\n\n"
                 "Выберите раздел для управления:"

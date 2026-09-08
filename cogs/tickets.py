@@ -20,7 +20,7 @@ class TicketsCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    @app_commands.command(name="afc-add", description="[AFC] Добавить пользователя в тикет")
+    @app_commands.command(name="hec-add", description="[Hector] Добавить пользователя в тикет")
     @app_commands.guild_only()
     async def add_user(self, interaction: discord.Interaction, member: discord.Member) -> None:
         async with async_session_maker() as session:
@@ -48,7 +48,7 @@ class TicketsCog(commands.Cog):
             embed=EmbedBuilder.success("Пользователь добавлен", f"{member.mention} добавлен в тикет."),
         )
 
-    @app_commands.command(name="afc-remove", description="[AFC] Удалить пользователя из тикета")
+    @app_commands.command(name="hec-remove", description="[Hector] Удалить пользователя из тикета")
     @app_commands.guild_only()
     async def remove_user(self, interaction: discord.Interaction, member: discord.Member) -> None:
         async with async_session_maker() as session:
@@ -76,7 +76,7 @@ class TicketsCog(commands.Cog):
             embed=EmbedBuilder.success("Пользователь удалён", f"{member.mention} удалён из тикета.")
         )
 
-    @app_commands.command(name="afc-transcript", description="[AFC] Создать транскрипт текущего тикета")
+    @app_commands.command(name="hec-transcript", description="[Hector] Создать транскрипт текущего тикета")
     @app_commands.guild_only()
     async def transcript(self, interaction: discord.Interaction) -> None:
         async with async_session_maker() as session:
@@ -121,7 +121,7 @@ class TicketsCog(commands.Cog):
             ephemeral=True,
         )
 
-    @app_commands.command(name="afc-info", description="[AFC] Показать информацию о текущем тикете")
+    @app_commands.command(name="hec-info", description="[Hector] Показать информацию о текущем тикете")
     @app_commands.guild_only()
     async def ticket_info(self, interaction: discord.Interaction) -> None:
         async with async_session_maker() as session:
@@ -154,7 +154,7 @@ class TicketsCog(commands.Cog):
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="afc-close", description="[AFC] Закрыть текущий тикет")
+    @app_commands.command(name="hec-close", description="[Hector] Закрыть текущий тикет")
     @app_commands.guild_only()
     async def close_ticket_cmd(self, interaction: discord.Interaction) -> None:
         async with async_session_maker() as session:

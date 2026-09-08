@@ -12,6 +12,11 @@ from modules.orders.views import OrderPanelView, OrderActionView, order_embed
 logger = logging.getLogger(__name__)
 
 
+def marker_aliases(marker):
+    # Recognize already-sent messages after the product rename to avoid duplicates.
+    return {marker, marker.replace("Hector CRM", "AFC CRM", 1)}
+
+
 class OrdersCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -69,7 +74,7 @@ class OrdersCog(commands.Cog):
 
     async def find_message(self, channel, marker):
         async for message in channel.history(limit=100):
-            if message.author.id == self.bot.user.id and any(e.footer.text == marker for e in message.embeds):
+            if message.author.id == self.bot.user.id and any(e.footer.text in marker_aliases(marker) for e in message.embeds):
                 return message
         return None
 
@@ -82,7 +87,7 @@ class OrdersCog(commands.Cog):
             channel = guild.get_channel(settings["panel_channel_id"])
             if not isinstance(channel, discord.TextChannel):
                 raise BackendError("Канал панели недоступен")
-            marker = f"AFC CRM panel {guild.id}"
+            marker = f"Hector CRM panel {guild.id}"
             message = None
             if settings["panel_message_id"]:
                 try:
@@ -106,7 +111,7 @@ class OrdersCog(commands.Cog):
             channel = guild.get_channel(settings["logistics_channel_id"])
             if not isinstance(channel, discord.TextChannel):
                 raise BackendError("Настройте доступный канал логистов")
-            marker = f"AFC CRM order {order_id}"
+            marker = f"Hector CRM order {order_id}"
             ref = next((r for r in refs if r["kind"] == "logistics" and r["channel_id"] == channel.id), None)
             message = None
             if ref and ref["message_id"]:
@@ -127,7 +132,7 @@ class OrdersCog(commands.Cog):
         if job["kind"] != "customer_notice":
             raise BackendError("Неизвестное задание")
         user = self.bot.get_user(row["discord_user_id"]) or await self.bot.fetch_user(row["discord_user_id"])
-        marker = f"AFC CRM notification {job['id']}"
+        marker = f"Hector CRM notification {job['id']}"
         # Preserve the status that caused this notification, even after an outage.
         from services.orders.domain import LABELS, Status
         row = {**row, "status": job["payload"]["status"],
@@ -149,8 +154,8 @@ class OrdersCog(commands.Cog):
             if not isinstance(category, discord.CategoryChannel):
                 raise BackendError("DM закрыты; настройте категорию приватных уведомлений")
             name = f"order-{order_id}"
-            topic = f"AFC CRM private order {order_id} customer {user.id}"
-            channel = next((c for c in category.text_channels if c.topic == topic), None)
+            topic = f"Hector CRM private order {order_id} customer {user.id}"
+            channel = next((c for c in category.text_channels if c.topic in marker_aliases(topic)), None)
             if channel is None:
                 member = guild.get_member(user.id) or await guild.fetch_member(user.id)
                 channel = await guild.create_text_channel(name, category=category, topic=topic, overwrites={
@@ -161,7 +166,7 @@ class OrdersCog(commands.Cog):
             await self.client.request("PUT", f"/api/v1/discord/messages/{order_id}", data={"kind": "fallback", "channel_id": channel.id})
         # Reconcile access even when an existing channel's overwrites were changed.
         member = guild.get_member(user.id) or await guild.fetch_member(user.id)
-        await channel.edit(overwrites={
+        await channel.edit(topic=f"Hector CRM private order {order_id} customer {user.id}", overwrites={
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             member: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
             guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),

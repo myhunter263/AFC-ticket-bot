@@ -207,11 +207,11 @@ docker compose exec -T db psql -U ticketbot ticketbot -c "SELECT version_num FRO
 CRM-заказы, события, задания Discord, связи ролей, склад и производство. Старые таблицы тикетов,
 Self Roles, Recruitment и каталога сохраняются.
 
-После запуска выполните в Discord `/afc-items-refresh` (или `/calc-admin` →
-**Обновить cache**), затем проверьте `/afc-foxhole-status`. Первая команда
+После запуска выполните в Discord `/hec-items-refresh` (или `/calc-admin` →
+**Обновить cache**), затем проверьте `/hec-foxhole-status`. Первая команда
 импортирует FoxholeHQ и дополнительный Facility/rail dataset Foxhole Wiki,
 вторая должна показать обе версии, количество предметов и рецептов.
-`/afc-foxhole-untranslated` покажет новые позиции для перевода.
+`/hec-foxhole-untranslated` покажет новые позиции для перевода.
 
 > Для обновления CRM используйте весь Compose: запуск только `bot` с `--no-deps`
 > пропустит обязательный сервис миграций. Существующий volume PostgreSQL сохраняется.
@@ -288,7 +288,7 @@ docker ps
 Создать файл `.github/workflows/deploy.yml` в репозитории `AFC-ticket-bot`:
 
 ```yaml
-name: Deploy AFC Ticket Bot
+name: Deploy Hector Ticket Bot
 
 on:
   push:

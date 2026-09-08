@@ -36,7 +36,7 @@ def create_app(sessions=None) -> FastAPI:
         if owned_engine is not None:
             await owned_engine.dispose()
 
-    app = FastAPI(title="AFC Logistics", version="1.0.0", lifespan=lifespan)
+    app = FastAPI(title="Hector Logistics", version="1.0.0", lifespan=lifespan)
     app.state.sessions = sessions
     from backend.orders import router
     app.include_router(router)

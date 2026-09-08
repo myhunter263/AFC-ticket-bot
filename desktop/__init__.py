@@ -1,1 +1,1 @@
-"""AFC desktop client. No database or Discord dependencies."""
+"""Hector desktop client. No database or Discord dependencies."""

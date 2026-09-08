@@ -19,7 +19,7 @@ class PointsCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    @app_commands.command(name="afc-points", description="[AFC] Показать баллы пользователя")
+    @app_commands.command(name="hec-points", description="[Hector] Показать баллы пользователя")
     @app_commands.guild_only()
     @app_commands.describe(member="Пользователь (по умолчанию — вы)")
     async def show_points(self, interaction: discord.Interaction, member: discord.Member | None = None) -> None:
@@ -40,7 +40,7 @@ class PointsCog(commands.Cog):
         embed.timestamp = __import__("datetime").datetime.utcnow()
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="afc-points-top", description="[AFC] Топ-10 участников по баллам")
+    @app_commands.command(name="hec-points-top", description="[Hector] Топ-10 участников по баллам")
     @app_commands.guild_only()
     async def points_top(self, interaction: discord.Interaction) -> None:
         async with async_session_maker() as session:
@@ -65,7 +65,7 @@ class PointsCog(commands.Cog):
         embed.timestamp = __import__("datetime").datetime.utcnow()
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="afc-points-set", description="[AFC] Установить баллы пользователю (Admin)")
+    @app_commands.command(name="hec-points-set", description="[Hector] Установить баллы пользователю (Admin)")
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(member="Пользователь", amount="Новое количество баллов")
@@ -90,7 +90,7 @@ class PointsCog(commands.Cog):
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="afc-points-add", description="[AFC] Начислить/списать баллы (Admin)")
+    @app_commands.command(name="hec-points-add", description="[Hector] Начислить/списать баллы (Admin)")
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(member="Пользователь", amount="Баллы (отрицательное значение — списание)")
@@ -118,8 +118,8 @@ class PointsCog(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(
-        name="afc-points-reset-all",
-        description="[AFC] Удалить все баллы на сервере (Discord Admin)",
+        name="hec-points-reset-all",
+        description="[Hector] Удалить все баллы на сервере (Discord Admin)",
     )
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)

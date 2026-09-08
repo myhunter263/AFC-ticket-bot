@@ -15,9 +15,10 @@ class LoginDialog(QDialog):
     def __init__(self, api, parent):
         super().__init__(parent)
         self.api = api
-        self.setWindowTitle("Подключение к AFC")
+        self.setWindowTitle("Подключение к Hector")
         layout = QFormLayout(self)
-        self.url = QLineEdit(QSettings("AFC", "Logistics").value("url", "http://127.0.0.1:8000"))
+        previous_url = QSettings("AFC", "Logistics").value("url", "http://127.0.0.1:8000")
+        self.url = QLineEdit(QSettings("Hector", "Logistics").value("url", previous_url))
         self.token = QLineEdit(); self.token.setEchoMode(QLineEdit.EchoMode.Password)
         layout.addRow("Адрес backend", self.url); layout.addRow("Личный токен", self.token)
         self.info = QLabel("Токен остаётся только в памяти приложения")
@@ -39,7 +40,7 @@ class LoginDialog(QDialog):
         if user["role"] == "BOT":
             return self.info.setText("Используйте личный токен сотрудника")
         self.user = user
-        QSettings("AFC", "Logistics").setValue("url", self.api.url)
+        QSettings("Hector", "Logistics").setValue("url", self.api.url)
         self.token.clear()
         self.accept()
 
@@ -47,7 +48,7 @@ class LoginDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("AFC · Логистический центр")
+        self.setWindowTitle("Hector · Логистический центр")
         self.resize(1400, 900)
         self.api = ApiClient(self)
         self.api.error.connect(lambda message: QMessageBox.warning(self, "Действие не выполнено", message))
@@ -85,7 +86,7 @@ class MainWindow(QMainWindow):
         self.api.role = self.user["role"]
         if self.user["role"] not in {"ADMIN", "MANAGER"}:
             for i in (3, 4, 5, 6, 7): self.nav.item(i).setHidden(True)
-        self.setWindowTitle(f"AFC · {self.user['name']}")
+        self.setWindowTitle(f"Hector · {self.user['name']}")
         self.nav.setCurrentRow(0)
         self.stream.connect()
         return True

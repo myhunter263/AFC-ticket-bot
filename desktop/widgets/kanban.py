@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
 
 from desktop.models.orders import STATUSES
 
-MIME = "application/x-afc-order"
+MIME = "application/x-hector-order"
 
 
 class Column(QListWidget):

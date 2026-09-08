@@ -112,7 +112,7 @@ class FoxholeWikiDataProvider:
     async def fetch_dataset(self) -> FoxholeDataset:
         timeout = aiohttp.ClientTimeout(total=90)
         headers = {
-            "User-Agent": "AFC-Discord-Calculator/1.0 (github.com/myhunter263/AFC-ticket-bot)"
+            "User-Agent": "Hector-Discord-Calculator/1.0 (github.com/myhunter263/AFC-ticket-bot)"
         }
         async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
             title_sets = await asyncio.gather(

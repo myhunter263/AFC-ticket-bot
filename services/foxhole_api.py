@@ -132,7 +132,7 @@ class FoxholeHQDataProvider(FoxholeDataProvider):
         if not self.base_url:
             raise FoxholeDataError("FOXHOLEHQ_BASE_URL не настроен")
         timeout = aiohttp.ClientTimeout(total=30)
-        headers = {"User-Agent": "AFC-Ticket-Bot/2.1 (FoxholeHQ catalogue sync)"}
+        headers = {"User-Agent": "Hector-Ticket-Bot/2.1 (FoxholeHQ catalogue sync)"}
         try:
             async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
                 page = await self._get_text(session, f"{self.base_url}{self.FACTORY_PATH}")

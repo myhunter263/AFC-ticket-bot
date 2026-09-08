@@ -86,13 +86,13 @@ async def _ensure_archive_category(
     if isinstance(archive, discord.CategoryChannel):
         await archive.edit(
             overwrites=overwrites,
-            reason="Sync AFC Ticket Bot archive permissions",
+            reason="Sync Hector Ticket Bot archive permissions",
         )
     else:
         archive = await guild.create_category(
             "Архив тикетов",
             overwrites=overwrites,
-            reason="AFC Ticket Bot archive category",
+            reason="Hector Ticket Bot archive category",
         )
         if db_guild:
             db_guild.archive_category_id = archive.id
@@ -910,7 +910,7 @@ class TicketView(discord.ui.View):
 
         if not statuses:
             await interaction.response.send_message(
-                embed=EmbedBuilder.warning("Нет статусов", "Создайте статусы через /afc-admin."),
+                embed=EmbedBuilder.warning("Нет статусов", "Создайте статусы через /hec-admin."),
                 ephemeral=True,
             )
             return

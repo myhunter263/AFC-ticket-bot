@@ -3,7 +3,7 @@
 ## Завершение установки: короткая инструкция
 
 На рабочем сервере выполняйте команды из папки, где уже лежат `.env` и
-`docker-compose.yml` бота. Подготовленный архив `afc-crm-release.zip` содержит
+`docker-compose.yml` бота. Подготовленный архив `hector-crm-release.zip` содержит
 только код, без токенов и тестовых данных.
 
 1. Сделайте резервную копию и остановите старый бот:
@@ -15,7 +15,7 @@
 
    Убедитесь, что первая команда завершилась без ошибки и файл копии не пустой.
 
-2. Загрузите `afc-crm-release.zip` на сервер и распакуйте в эту же папку проекта
+2. Загрузите `hector-crm-release.zip` на сервер и распакуйте в эту же папку проекта
    с заменой файлов кода. Сохраните рабочий `.env`, `logs` и volume PostgreSQL.
    Затем соберите и запустите:
 
@@ -115,7 +115,7 @@ Backend опубликован только на `127.0.0.1:8000` сервера
 В `.env` по умолчанию пусты `BACKEND_URL` и `BACKEND_TOKEN`: старый бот продолжает
 работать, новая интеграция включается после выпуска сервисного токена.
 Сервер Discord должен уже присутствовать в таблице `guilds` существующего бота
-(обычная настройка `/afc-setup`). Токены выпускаются только на сервере:
+(обычная настройка `/hec-setup`). Токены выпускаются только на сервере:
 
 ```sh
 docker compose run --rm backend python -m backend.manage issue --guild GUILD_ID --user BOT_USER_ID --name discord-service --role BOT
@@ -310,7 +310,7 @@ Discord worker арендует одно задание на guild на 5 мин
 
 ```powershell
 .venv/Scripts/python.exe -m pip install -r requirements-test.txt -r requirements-desktop.txt
-$env:CRM_TEST_DATABASE_URL='postgresql+asyncpg://USER:PASSWORD@127.0.0.1:5432/afc_test'
+$env:CRM_TEST_DATABASE_URL='postgresql+asyncpg://USER:PASSWORD@127.0.0.1:5432/hector_test'
 .venv/Scripts/python.exe -m pytest -q
 ```
 

@@ -19,7 +19,7 @@ class SetupCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    @app_commands.command(name="afc-setup", description="[AFC] Первоначальная настройка бота на сервере")
+    @app_commands.command(name="hec-setup", description="[Hector] Первоначальная настройка бота на сервере")
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     async def setup_bot(self, interaction: discord.Interaction) -> None:
@@ -33,39 +33,39 @@ class SetupCog(commands.Cog):
         synced = await sync_commands_to_guild(self.bot, interaction.guild)
 
         embed = discord.Embed(
-            title="✅ AFC Ticket Bot настроен",
+            title="✅ Hector Ticket Bot настроен",
             description=(
                 "Бот успешно инициализирован на вашем сервере!\n\n"
                 f"**Синхронизировано команд:** {len(synced)}\n"
                 "**Созданы статусы по умолчанию:** Новая, В работе, Ожидание клиента, Завершена, Отменена\n\n"
-                "Откройте панель управления командой `/afc-admin` для настройки панелей тикетов."
+                "Откройте панель управления командой `/hec-admin` для настройки панелей тикетов."
             ),
             color=0x57F287,
         )
         embed.add_field(
             name="Доступные команды",
             value=(
-                "`/afc-admin` — панель управления\n"
-                "`/afc-tickets` — список открытых заявок\n"
-                "`/afc-close` — закрыть тикет\n"
-                "`/afc-transcript` — экспорт тикета\n"
-                "`/afc-info` — информация о тикете\n"
-                "`/afc-add` — добавить пользователя\n"
-                "`/afc-remove` — удалить пользователя\n"
+                "`/hec-admin` — панель управления\n"
+                "`/hec-tickets` — список открытых заявок\n"
+                "`/hec-close` — закрыть тикет\n"
+                "`/hec-transcript` — экспорт тикета\n"
+                "`/hec-info` — информация о тикете\n"
+                "`/hec-add` — добавить пользователя\n"
+                "`/hec-remove` — удалить пользователя\n"
             ),
             inline=False,
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="afc-status", description="[AFC] Информация о боте и статистика")
+    @app_commands.command(name="hec-status", description="[Hector] Информация о боте и статистика")
     @app_commands.guild_only()
-    async def afc_status(self, interaction: discord.Interaction) -> None:
+    async def hec_status(self, interaction: discord.Interaction) -> None:
         async with async_session_maker() as session:
             tickets = await TicketService.list_open(session, interaction.guild_id, limit=1000)
             statuses = await StatusService.get_all(session, interaction.guild_id)
 
         embed = discord.Embed(
-            title="ℹ️ AFC Ticket Bot",
+            title="ℹ️ Hector Ticket Bot",
             description="Discord бот для управления заявками и тикетами.",
             color=0x5865F2,
         )

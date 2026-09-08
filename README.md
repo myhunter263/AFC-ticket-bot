@@ -1,4 +1,4 @@
-# AFC Ticket Bot
+# Hector Ticket Bot
 
 Discord-бот для заявок игрового сообщества Foxhole. Работает на `discord.py`,
 PostgreSQL и Docker Compose.
@@ -13,7 +13,7 @@ Self Roles и Recruitment. Общие permissions, audit log и реестр per
 
 ## Панели самовыдачи ролей
 
-В `/afc-admin` → **Панели самовыдачи ролей** администратор может
+В `/hec-admin` → **Панели самовыдачи ролей** администратор может
 создать несколько постоянных панелей, настроить канал, текст,
 emoji, порядок и Discord-роли. Кнопка выдаёт роль или снимает её при
 повторном нажатии. Роли с опасными permissions или роли выше роли бота
@@ -21,7 +21,7 @@ emoji, порядок и Discord-роли. Кнопка выдаёт роль и
 
 ## Вступление в клан
 
-В `/afc-admin` → **Вступление в клан** настраиваются постоянная панель,
+В `/hec-admin` → **Вступление в клан** настраиваются постоянная панель,
 вопросы многошаговой формы, категория приватных тикетов, роли
 рекрутеров, роль после принятия и шаблон имени канала. Заявка может
 иметь статус `PENDING`, `ACCEPTED` или `REJECTED`; закрытие блокирует
@@ -54,7 +54,7 @@ emoji, порядок и Discord-роли. Кнопка выдаёт роль и
 
 ### Настройка формы
 
-1. Откройте `/afc-admin` → **Формы**.
+1. Откройте `/hec-admin` → **Формы**.
 2. Создайте или выберите форму.
 3. Добавьте многострочное поле с типом `foxhole_order`.
 4. Привяжите форму к нужной панели тикетов.
@@ -63,7 +63,7 @@ emoji, порядок и Discord-роли. Кнопка выдаёт роль и
 
 ## Каталог и алиасы
 
-В `/afc-admin` доступен раздел **Каталог Foxhole**. В нём можно обновлять
+В `/hec-admin` доступен раздел **Каталог Foxhole**. В нём можно обновлять
 технические данные, искать предметы, менять русское название, добавлять и удалять
 жаргонизмы. Доступ имеют только администраторы Discord и настроенная роль
 администратора бота.
@@ -71,21 +71,21 @@ emoji, порядок и Discord-роли. Кнопка выдаёт роль и
 Быстрые административные команды:
 
 ```text
-/afc-items-refresh
-/afc-foxhole-status
-/afc-foxhole-untranslated
-/afc-item-search
-/afc-item-alias-add
-/afc-item-alias-remove
-/afc-item-rename
-/afc-item-override
-/afc-item-debug
-/afc-unknown-aliases
-/afc-dictionary-export
-/afc-dictionary-import
+/hec-items-refresh
+/hec-foxhole-status
+/hec-foxhole-untranslated
+/hec-item-search
+/hec-item-alias-add
+/hec-item-alias-remove
+/hec-item-rename
+/hec-item-override
+/hec-item-debug
+/hec-unknown-aliases
+/hec-dictionary-export
+/hec-dictionary-import
 ```
 
-`/afc-item-override` вручную исправляет категорию, цену, производственное здание,
+`/hec-item-override` вручную исправляет категорию, цену, производственное здание,
 размер обычного и транспортного ящика, признак техники и параметры MPF. Ручные
 значения имеют приоритет над FoxholeHQ.
 
@@ -100,7 +100,7 @@ emoji, порядок и Discord-роли. Кнопка выдаёт роль и
 
 `/train` собирает состав до 15 локомотивов и вагонов и суммирует Facility-ресурсы.
 Администратор управляет cache, алиасами и ручными рецептами через `/calc-admin`
-или раздел **Foxhole Calculator** в `/afc-admin`; `/calc-debug` показывает
+или раздел **Foxhole Calculator** в `/hec-admin`; `/calc-debug` показывает
 исходные ID, единицы, рецепты, версии и источник данных.
 
 ## Источник данных

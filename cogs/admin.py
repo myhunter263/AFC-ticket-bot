@@ -74,7 +74,7 @@ class AdminCog(commands.Cog):
     async def before_foxhole_auto_sync(self) -> None:
         await self.bot.wait_until_ready()
 
-    @app_commands.command(name="afc-admin", description="[AFC] Открыть панель управления ботом")
+    @app_commands.command(name="hec-admin", description="[Hector] Открыть панель управления ботом")
     @app_commands.guild_only()
     async def admin(self, interaction: discord.Interaction) -> None:
         async with async_session_maker() as session:
@@ -98,7 +98,7 @@ class AdminCog(commands.Cog):
         view = AdminPanelView(guild_id=interaction.guild_id)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-    @app_commands.command(name="afc-tickets", description="[AFC] Показать список открытых заявок")
+    @app_commands.command(name="hec-tickets", description="[Hector] Показать список открытых заявок")
     @app_commands.guild_only()
     async def tickets_list(self, interaction: discord.Interaction) -> None:
         async with async_session_maker() as session:
@@ -132,7 +132,7 @@ class AdminCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="afc-sync", description="[AFC] Синхронизировать slash-команды (только для владельца)")
+    @app_commands.command(name="hec-sync", description="[Hector] Синхронизировать slash-команды (только для владельца)")
     @app_commands.guild_only()
     async def sync_commands(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != interaction.guild.owner_id:
@@ -159,7 +159,7 @@ class AdminCog(commands.Cog):
             )
         return allowed
 
-    @app_commands.command(name="afc-items-refresh", description="[AFC] Обновить каталог предметов Foxhole")
+    @app_commands.command(name="hec-items-refresh", description="[Hector] Обновить каталог предметов Foxhole")
     @app_commands.guild_only()
     async def refresh_items(self, interaction: discord.Interaction) -> None:
         if not await self._require_admin(interaction):
@@ -210,7 +210,7 @@ class AdminCog(commands.Cog):
             ephemeral=True,
         )
 
-    @app_commands.command(name="afc-foxhole-status", description="[AFC] Состояние данных FoxholeHQ")
+    @app_commands.command(name="hec-foxhole-status", description="[Hector] Состояние данных FoxholeHQ")
     @app_commands.guild_only()
     async def foxhole_status(self, interaction: discord.Interaction) -> None:
         if not await self._require_admin(interaction):
@@ -238,8 +238,8 @@ class AdminCog(commands.Cog):
         )
 
     @app_commands.command(
-        name="afc-foxhole-untranslated",
-        description="[AFC] Показать предметы FoxholeHQ без русского названия",
+        name="hec-foxhole-untranslated",
+        description="[Hector] Показать предметы FoxholeHQ без русского названия",
     )
     @app_commands.guild_only()
     async def foxhole_untranslated(self, interaction: discord.Interaction) -> None:
@@ -274,7 +274,7 @@ class AdminCog(commands.Cog):
             ephemeral=True,
         )
 
-    @app_commands.command(name="afc-item-search", description="[AFC] Найти предмет и посмотреть его алиасы")
+    @app_commands.command(name="hec-item-search", description="[Hector] Найти предмет и посмотреть его алиасы")
     @app_commands.describe(query="Русское, английское название или алиас")
     @app_commands.guild_only()
     async def item_search(self, interaction: discord.Interaction, query: str) -> None:
@@ -300,7 +300,7 @@ class AdminCog(commands.Cog):
             )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="afc-item-debug", description="[AFC] Диагностика распознавания предмета")
+    @app_commands.command(name="hec-item-debug", description="[Hector] Диагностика распознавания предмета")
     @app_commands.describe(query="Проверяемый текст или жаргонизм")
     @app_commands.guild_only()
     async def item_debug(self, interaction: discord.Interaction, query: str) -> None:
@@ -330,7 +330,7 @@ class AdminCog(commands.Cog):
             ephemeral=True,
         )
 
-    @app_commands.command(name="afc-unknown-aliases", description="[AFC] Частые неизвестные названия")
+    @app_commands.command(name="hec-unknown-aliases", description="[Hector] Частые неизвестные названия")
     @app_commands.guild_only()
     async def unknown_aliases(self, interaction: discord.Interaction) -> None:
         if not await self._require_admin(interaction):
@@ -345,7 +345,7 @@ class AdminCog(commands.Cog):
             ephemeral=True,
         )
 
-    @app_commands.command(name="foxhole_dictionary_status", description="[AFC] Покрытие русского словаря Foxhole")
+    @app_commands.command(name="foxhole_dictionary_status", description="[Hector] Покрытие русского словаря Foxhole")
     @app_commands.guild_only()
     async def dictionary_status(self, interaction: discord.Interaction) -> None:
         if not await self._require_admin(interaction):
@@ -368,7 +368,7 @@ class AdminCog(commands.Cog):
             ephemeral=True,
         )
 
-    @app_commands.command(name="item_price_debug", description="[AFC] Проверить цену предмета Foxhole")
+    @app_commands.command(name="item_price_debug", description="[Hector] Проверить цену предмета Foxhole")
     @app_commands.describe(query="Русское, английское название или алиас")
     @app_commands.guild_only()
     async def item_price_debug(self, interaction: discord.Interaction, query: str) -> None:
@@ -418,7 +418,7 @@ class AdminCog(commands.Cog):
             ephemeral=True,
         )
 
-    @app_commands.command(name="foxhole_price_audit", description="[AFC] Массовый аудит цен FoxholeHQ")
+    @app_commands.command(name="foxhole_price_audit", description="[Hector] Массовый аудит цен FoxholeHQ")
     @app_commands.guild_only()
     async def foxhole_price_audit(self, interaction: discord.Interaction) -> None:
         if not await self._require_admin(interaction):
@@ -445,7 +445,7 @@ class AdminCog(commands.Cog):
             ephemeral=True,
         )
 
-    @app_commands.command(name="afc-dictionary-export", description="[AFC] Экспорт словаря Foxhole в JSON")
+    @app_commands.command(name="hec-dictionary-export", description="[Hector] Экспорт словаря Foxhole в JSON")
     @app_commands.guild_only()
     async def dictionary_export(self, interaction: discord.Interaction) -> None:
         if not await self._require_admin(interaction):
@@ -461,7 +461,7 @@ class AdminCog(commands.Cog):
             ephemeral=True,
         )
 
-    @app_commands.command(name="afc-dictionary-import", description="[AFC] Импорт словаря Foxhole из JSON")
+    @app_commands.command(name="hec-dictionary-import", description="[Hector] Импорт словаря Foxhole из JSON")
     @app_commands.describe(file="JSON-файл, полученный экспортом словаря")
     @app_commands.guild_only()
     async def dictionary_import(
@@ -508,9 +508,9 @@ class AdminCog(commands.Cog):
             ephemeral=True,
         )
 
-    @app_commands.command(name="afc-item-alias-add", description="[AFC] Добавить жаргонизм к предмету")
+    @app_commands.command(name="hec-item-alias-add", description="[Hector] Добавить жаргонизм к предмету")
     @app_commands.describe(
-        item_id="ID из /afc-item-search",
+        item_id="ID из /hec-item-search",
         alias="Новое русское название или жаргонизм",
         alias_type="slang, abbreviation, transliteration, typo, caliber или custom",
         priority="Приоритет 0-200; стандартное значение 100",
@@ -530,7 +530,7 @@ class AdminCog(commands.Cog):
             localization = await ItemCatalogService.get_localization(session, interaction.guild_id, item_id)
             if not localization:
                 await interaction.response.send_message(
-                    embed=EmbedBuilder.error("Предмет не найден", "Сначала найдите ID через `/afc-item-search`."),
+                    embed=EmbedBuilder.error("Предмет не найден", "Сначала найдите ID через `/hec-item-search`."),
                     ephemeral=True,
                 )
                 return
@@ -564,8 +564,8 @@ class AdminCog(commands.Cog):
             ephemeral=True,
         )
 
-    @app_commands.command(name="afc-item-alias-remove", description="[AFC] Удалить алиас предмета")
-    @app_commands.describe(item_id="ID из /afc-item-search", alias="Удаляемый алиас")
+    @app_commands.command(name="hec-item-alias-remove", description="[Hector] Удалить алиас предмета")
+    @app_commands.describe(item_id="ID из /hec-item-search", alias="Удаляемый алиас")
     @app_commands.guild_only()
     async def item_alias_remove(self, interaction: discord.Interaction, item_id: int, alias: str) -> None:
         if not await self._require_admin(interaction):
@@ -594,8 +594,8 @@ class AdminCog(commands.Cog):
             embed=EmbedBuilder.success("Алиас удалён", f"Алиас **{alias}** удалён."), ephemeral=True
         )
 
-    @app_commands.command(name="afc-item-rename", description="[AFC] Изменить русское название предмета")
-    @app_commands.describe(item_id="ID из /afc-item-search", ru_name="Новое отображаемое название")
+    @app_commands.command(name="hec-item-rename", description="[Hector] Изменить русское название предмета")
+    @app_commands.describe(item_id="ID из /hec-item-search", ru_name="Новое отображаемое название")
     @app_commands.guild_only()
     async def item_rename(self, interaction: discord.Interaction, item_id: int, ru_name: str) -> None:
         if not await self._require_admin(interaction):
@@ -632,9 +632,9 @@ class AdminCog(commands.Cog):
             ephemeral=True,
         )
 
-    @app_commands.command(name="afc-item-override", description="[AFC] Переопределить производство предмета")
+    @app_commands.command(name="hec-item-override", description="[Hector] Переопределить производство предмета")
     @app_commands.describe(
-        item_id="ID из /afc-item-search",
+        item_id="ID из /hec-item-search",
         category="Категория предмета",
         is_vehicle="Физически является транспортным средством",
         production_group="AUTO, ITEM или EQUIPMENT (единица заказа и MPF-очередь)",
