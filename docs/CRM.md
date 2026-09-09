@@ -319,3 +319,40 @@ PySide6 пропускаются Qt-тесты. Проверяются concurren
 идемпотентность, снимки, WebSocket replay, аренда заданий, persistent views,
 корзина, API-вызовы Kanban и запуск всех страниц. Реальный Discord gateway и
 контейнерная сборка требуют отдельного серверного smoke test после настройки.
+
+
+## HTTPS для Desktop и Android
+
+Рабочий адрес Hector: `https://103.56.84.85:8443`. В приложении нужен персональный
+ключ сотрудника. SSH-туннель на компьютере для этого адреса не требуется.
+Порт 443 остаётся за Xray/VPN; backend по-прежнему привязан к 127.0.0.1:8000.
+
+HTTPS запускается дополнительным Compose-файлом:
+
+```bash
+cd /opt/AFC-ticket-bot
+docker compose -f docker-compose.yml -f docker-compose.https.yml up -d --no-deps https
+```
+
+Сертификат Let's Encrypt для IP хранится только на сервере в
+`/etc/hector/letsencrypt`; в Git его нет. Срок сертификата — шесть дней.
+`deploy/hector-cert-renew.service` и `.timer` установлены в `/etc/systemd/system/`.
+Таймер проверяет продление дважды в сутки, после успешной проверки перезагружает
+nginx. Для ACME-проверки Certbot временно занимает свободный порт 80. Не занимайте
+этот порт другим сервисом без перенастройки способа продления.
+
+```bash
+systemctl status hector-cert-renew.timer
+journalctl -u hector-cert-renew.service -n 20 --no-pager
+```
+
+При первоначальной установке сертификата на этот сервер:
+
+```bash
+install -d -m 700 /etc/hector/letsencrypt
+docker run --rm -p 80:80 -v /etc/hector/letsencrypt:/etc/letsencrypt certbot/certbot:v5.4.0 certonly --standalone --non-interactive --agree-tos --register-unsafely-without-email --preferred-profile shortlived --ip-address 103.56.84.85
+ufw allow 8443/tcp
+install -m 644 deploy/hector-cert-renew.service deploy/hector-cert-renew.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now hector-cert-renew.timer
+```

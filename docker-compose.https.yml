@@ -1,0 +1,17 @@
+# Optional public HTTPS endpoint. Port 443 on the host belongs to the VPN.
+services:
+  https:
+    image: nginx:1.28-alpine
+    restart: unless-stopped
+    ports:
+      - "8443:443"
+    volumes:
+      - ./nginx/hector.conf:/etc/nginx/conf.d/default.conf:ro
+      - /etc/hector/letsencrypt:/etc/letsencrypt:ro
+    networks:
+      - botnet
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

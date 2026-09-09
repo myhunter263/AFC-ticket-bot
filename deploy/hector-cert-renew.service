@@ -1,0 +1,13 @@
+[Unit]
+Description=Renew Hector HTTPS certificate and reload nginx
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/AFC-ticket-bot
+ExecStart=/usr/bin/docker run --rm --name hector-cert-renew -p 80:80 -v /etc/hector/letsencrypt:/etc/letsencrypt certbot/certbot:v5.4.0 renew --non-interactive
+ExecStartPost=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.https.yml exec -T https nginx -t
+ExecStartPost=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.https.yml exec -T https nginx -s reload
+TimeoutStartSec=600
