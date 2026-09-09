@@ -8,6 +8,7 @@ services:
     volumes:
       - ./nginx/hector.conf:/etc/nginx/conf.d/default.conf:ro
       - /etc/hector/letsencrypt:/etc/letsencrypt:ro
+      - /opt/hector-downloads:/srv/downloads:ro
     networks:
       - botnet
     logging:
