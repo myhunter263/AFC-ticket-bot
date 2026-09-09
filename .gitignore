@@ -15,3 +15,8 @@ transcripts/
 backups/
 .DS_Store
 .tools/
+android/.gradle/
+android/.kotlin/
+android/local.properties
+*.jks
+*.keystore
